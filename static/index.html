@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RNN-T Real-time Transcription Demo</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎙️ RNN-T Real-time Transcription</h1>
+            <p class="subtitle">Stream audio directly to GPU-accelerated RNN-T model</p>
+        </header>
+
+        <div class="connection-status" id="connection-status">
+            <span class="status-indicator" id="status-indicator"></span>
+            <span id="status-text">Connecting...</span>
+        </div>
+
+        <div class="controls">
+            <button id="recordBtn" class="btn btn-primary" disabled>
+                <span class="btn-icon">🎤</span>
+                <span class="btn-text">Start Recording</span>
+            </button>
+            
+            <button id="clearBtn" class="btn btn-secondary">
+                <span class="btn-icon">🗑️</span>
+                <span class="btn-text">Clear</span>
+            </button>
+        </div>
+
+        <div class="audio-visualizer">
+            <div class="audio-level-container">
+                <div id="audio-level" class="audio-level"></div>
+            </div>
+        </div>
+
+        <div class="transcription-container">
+            <div class="transcription-header">
+                <h2>Transcription</h2>
+                <div id="metrics" class="metrics"></div>
+            </div>
+            
+            <div id="partial-transcript" class="partial-transcript"></div>
+            <div id="transcript" class="transcript"></div>
+        </div>
+
+        <div class="info-panel">
+            <h3>Developer Information</h3>
+            <div class="info-grid">
+                <div class="info-item">
+                    <strong>WebSocket URL:</strong>
+                    <code id="ws-url">Detecting...</code>
+                </div>
+                <div class="info-item">
+                    <strong>Audio Format:</strong>
+                    <code>16kHz, Mono, PCM16</code>
+                </div>
+                <div class="info-item">
+                    <strong>Chunk Size:</strong>
+                    <code>100ms (1600 samples)</code>
+                </div>
+                <div class="info-item">
+                    <strong>Model:</strong>
+                    <code>SpeechBrain Conformer RNN-T</code>
+                </div>
+            </div>
+            
+            <details class="protocol-details">
+                <summary>WebSocket Protocol</summary>
+                <pre><code>// Audio streaming (binary)
+ws.send(pcm16AudioBuffer);
+
+// Control messages (JSON)
+ws.send(JSON.stringify({
+    type: 'start_recording',
+    config: { sample_rate: 16000 }
+}));
+
+// Transcription response
+{
+    type: 'transcription',
+    text: 'Hello world',
+    words: [{
+        word: 'Hello',
+        start: 0.0,
+        end: 0.5,
+        confidence: 0.95
+    }],
+    is_final: true,
+    processing_time_ms: 45
+}</code></pre>
+            </details>
+        </div>
+
+        <footer>
+            <p>View source on <a href="#" id="github-link">GitHub</a> | 
+               <a href="simple-client.html">Minimal Example</a> |
+               <a href="/docs">API Documentation</a>
+            </p>
+        </footer>
+    </div>
+
+    <!-- Load JavaScript modules -->
+    <script src="/static/audio-recorder.js"></script>
+    <script src="/static/websocket-client.js"></script>
+    <script src="/static/transcription-ui.js"></script>
+    
+    <script>
+        // Initialize application
+        let recorder = null;
+        let wsClient = null;
+        let ui = null;
+        let isRecording = false;
+        
+        // Initialize UI first
+        ui = new TranscriptionUI({
+            transcriptElement: document.getElementById('transcript'),
+            partialElement: document.getElementById('partial-transcript'),
+            statusElement: document.getElementById('status-text'),
+            metricsElement: document.getElementById('metrics'),
+            audioLevelElement: document.getElementById('audio-level')
+        });
+        
+        // Initialize WebSocket with automatic protocol detection
+        wsClient = new TranscriptionWebSocket({
+            onConnect: () => {
+                ui.updateStatus('Connected', 'success');
+                document.getElementById('status-indicator').className = 'status-indicator connected';
+                document.getElementById('recordBtn').disabled = false;
+                // Update displayed URL with actual WebSocket URL
+                document.getElementById('ws-url').textContent = wsClient.url;
+            },
+            onDisconnect: () => {
+                ui.updateStatus('Disconnected', 'error');
+                document.getElementById('status-indicator').className = 'status-indicator disconnected';
+                document.getElementById('recordBtn').disabled = true;
+                if (isRecording) {
+                    stopRecording();
+                }
+            },
+            onTranscription: (message) => {
+                ui.addTranscription(message);
+            },
+            onPartialTranscription: (message) => {
+                ui.updatePartial(message);
+            },
+            onError: (error) => {
+                ui.updateStatus(`Error: ${error.message}`, 'error');
+                console.error('WebSocket error:', error);
+            }
+        });
+        
+        // Update displayed WebSocket URL immediately
+        document.getElementById('ws-url').textContent = wsClient.url;
+        
+        // Initialize audio recorder
+        recorder = new AudioRecorder({
+            sampleRate: 16000,
+            chunkDuration: 100,
+            onAudioData: (audioData) => {
+                if (isRecording) {
+                    wsClient.sendAudio(audioData);
+                }
+            },
+            onError: (error) => {
+                ui.updateStatus(`Audio error: ${error.message}`, 'error');
+                console.error('Audio error:', error);
+                stopRecording();
+            }
+        });
+        
+        // Recording control
+        async function startRecording() {
+            try {
+                // Start WebSocket recording session
+                wsClient.startRecording({
+                    sampleRate: 16000,
+                    encoding: 'pcm16'
+                });
+                
+                // Start audio capture
+                await recorder.start();
+                
+                isRecording = true;
+                
+                // Update UI
+                document.getElementById('recordBtn').classList.add('recording');
+                document.querySelector('#recordBtn .btn-text').textContent = 'Stop Recording';
+                ui.updateStatus('Recording...', 'info');
+                
+                // Start audio level monitoring
+                startAudioLevelMonitoring();
+                
+            } catch (error) {
+                console.error('Failed to start recording:', error);
+                ui.updateStatus('Failed to start recording', 'error');
+            }
+        }
+        
+        function stopRecording() {
+            // Stop audio capture
+            recorder.stop();
+            
+            // Stop WebSocket session
+            wsClient.stopRecording();
+            
+            isRecording = false;
+            
+            // Update UI
+            document.getElementById('recordBtn').classList.remove('recording');
+            document.querySelector('#recordBtn .btn-text').textContent = 'Start Recording';
+            ui.updateStatus('Ready', 'success');
+            
+            // Stop audio level monitoring
+            stopAudioLevelMonitoring();
+        }
+        
+        // Audio level monitoring
+        let audioLevelInterval = null;
+        
+        function startAudioLevelMonitoring() {
+            audioLevelInterval = setInterval(() => {
+                const level = recorder.getAudioLevel();
+                ui.updateAudioLevel(level);
+            }, 100);
+        }
+        
+        function stopAudioLevelMonitoring() {
+            if (audioLevelInterval) {
+                clearInterval(audioLevelInterval);
+                audioLevelInterval = null;
+            }
+            ui.updateAudioLevel(0);
+        }
+        
+        // Event listeners
+        document.getElementById('recordBtn').addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+        
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            ui.clear();
+        });
+        
+        // Check browser compatibility
+        if (!AudioRecorder.isSupported()) {
+            ui.updateStatus('Browser not supported. Please use Chrome or Firefox.', 'error');
+            document.getElementById('recordBtn').disabled = true;
+        } else {
+            // Connect to WebSocket
+            wsClient.connect();
+        }
+        
+        // Export functionality for debugging
+        window.debugExport = {
+            getTranscript: () => ui.exportText(),
+            getTimestamps: () => ui.exportWithTimestamps(),
+            wsClient: wsClient,
+            recorder: recorder,
+            ui: ui
+        };
+    </script>
+</body>
+</html>

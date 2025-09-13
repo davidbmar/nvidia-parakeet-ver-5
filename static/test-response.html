@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Response Format</title>
+    <style>
+        body { font-family: monospace; margin: 20px; }
+        .response { background: #f0f0f0; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        pre { white-space: pre-wrap; word-break: break-all; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug Response Format</h1>
+    <p>This page will show you the exact server response format.</p>
+    
+    <input type="file" id="fileInput" accept="audio/*" />
+    <button onclick="testUpload()">Test Upload & Show Response</button>
+    
+    <div id="result"></div>
+
+    <script>
+        async function testUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const result = document.getElementById('result');
+            
+            if (!fileInput.files[0]) {
+                alert('Please select a file first');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            result.innerHTML = '<p>🔄 Uploading...</p>';
+            
+            try {
+                const response = await fetch('/transcribe/file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const responseText = await response.text();
+                
+                result.innerHTML = `
+                    <div class="response">
+                        <h3>HTTP Status: ${response.status}</h3>
+                        <h3>Response Headers:</h3>
+                        <pre>${Array.from(response.headers.entries()).map(([k,v]) => k + ': ' + v).join('\\n')}</pre>
+                        <h3>Raw Response:</h3>
+                        <pre>${responseText}</pre>
+                    </div>
+                `;
+                
+                try {
+                    const data = JSON.parse(responseText);
+                    result.innerHTML += `
+                        <div class="response">
+                            <h3>Parsed JSON:</h3>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                            <h3>Specific Fields:</h3>
+                            <p><strong>data.text:</strong> "${data.text || 'undefined'}"</p>
+                            <p><strong>data.transcript:</strong> "${data.transcript || 'undefined'}"</p>
+                            <p><strong>data.confidence:</strong> ${data.confidence || 'undefined'}</p>
+                            <p><strong>data.audio_duration_s:</strong> ${data.audio_duration_s || 'undefined'}</p>
+                        </div>
+                    `;
+                } catch (e) {
+                    result.innerHTML += `<div class="response"><h3>JSON Parse Error:</h3><p>${e.message}</p></div>`;
+                }
+                
+            } catch (error) {
+                result.innerHTML = `<div class="response"><h3>Error:</h3><p>${error.message}</p></div>`;
+            }
+        }
+    </script>
+</body>
+</html>

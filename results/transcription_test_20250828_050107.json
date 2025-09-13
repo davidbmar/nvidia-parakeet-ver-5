@@ -1,0 +1,226 @@
+{
+    "text": "DOLLARS A MONTH THERE'S A LOT OF COATING COURSES AND A POT OF STUFF OUT THERE WHAT DID YOU DO DIFFERENTLY WHAT IS YOUR SECRET INGREDIENT FOR THIS BUSINESS IN THIS MARKET ON MY LEARNING",
+    "confidence": 0.95,
+    "words": [
+        {
+            "word": "DOLLARS",
+            "start_time": 0.0,
+            "end_time": 0.26,
+            "confidence": 0.95
+        },
+        {
+            "word": "A",
+            "start_time": 0.286,
+            "end_time": 0.494,
+            "confidence": 0.95
+        },
+        {
+            "word": "MONTH",
+            "start_time": 0.571,
+            "end_time": 0.814,
+            "confidence": 0.95
+        },
+        {
+            "word": "THERE'S",
+            "start_time": 0.857,
+            "end_time": 1.117,
+            "confidence": 0.95
+        },
+        {
+            "word": "A",
+            "start_time": 1.143,
+            "end_time": 1.351,
+            "confidence": 0.95
+        },
+        {
+            "word": "LOT",
+            "start_time": 1.429,
+            "end_time": 1.654,
+            "confidence": 0.95
+        },
+        {
+            "word": "OF",
+            "start_time": 1.714,
+            "end_time": 1.931,
+            "confidence": 0.95
+        },
+        {
+            "word": "COATING",
+            "start_time": 2.0,
+            "end_time": 2.26,
+            "confidence": 0.95
+        },
+        {
+            "word": "COURSES",
+            "start_time": 2.286,
+            "end_time": 2.546,
+            "confidence": 0.95
+        },
+        {
+            "word": "AND",
+            "start_time": 2.571,
+            "end_time": 2.797,
+            "confidence": 0.95
+        },
+        {
+            "word": "A",
+            "start_time": 2.857,
+            "end_time": 3.066,
+            "confidence": 0.95
+        },
+        {
+            "word": "POT",
+            "start_time": 3.143,
+            "end_time": 3.369,
+            "confidence": 0.95
+        },
+        {
+            "word": "OF",
+            "start_time": 3.429,
+            "end_time": 3.646,
+            "confidence": 0.95
+        },
+        {
+            "word": "STUFF",
+            "start_time": 3.714,
+            "end_time": 3.957,
+            "confidence": 0.95
+        },
+        {
+            "word": "OUT",
+            "start_time": 4.0,
+            "end_time": 4.226,
+            "confidence": 0.95
+        },
+        {
+            "word": "THERE",
+            "start_time": 4.286,
+            "end_time": 4.529,
+            "confidence": 0.95
+        },
+        {
+            "word": "WHAT",
+            "start_time": 4.571,
+            "end_time": 4.806,
+            "confidence": 0.95
+        },
+        {
+            "word": "DID",
+            "start_time": 4.857,
+            "end_time": 5.083,
+            "confidence": 0.95
+        },
+        {
+            "word": "YOU",
+            "start_time": 5.143,
+            "end_time": 5.369,
+            "confidence": 0.95
+        },
+        {
+            "word": "DO",
+            "start_time": 5.429,
+            "end_time": 5.646,
+            "confidence": 0.95
+        },
+        {
+            "word": "DIFFERENTLY",
+            "start_time": 5.714,
+            "end_time": 6.009,
+            "confidence": 0.95
+        },
+        {
+            "word": "WHAT",
+            "start_time": 6.0,
+            "end_time": 6.234,
+            "confidence": 0.95
+        },
+        {
+            "word": "IS",
+            "start_time": 6.286,
+            "end_time": 6.503,
+            "confidence": 0.95
+        },
+        {
+            "word": "YOUR",
+            "start_time": 6.571,
+            "end_time": 6.806,
+            "confidence": 0.95
+        },
+        {
+            "word": "SECRET",
+            "start_time": 6.857,
+            "end_time": 7.109,
+            "confidence": 0.95
+        },
+        {
+            "word": "INGREDIENT",
+            "start_time": 7.143,
+            "end_time": 7.429,
+            "confidence": 0.95
+        },
+        {
+            "word": "FOR",
+            "start_time": 7.429,
+            "end_time": 7.654,
+            "confidence": 0.95
+        },
+        {
+            "word": "THIS",
+            "start_time": 7.714,
+            "end_time": 7.949,
+            "confidence": 0.95
+        },
+        {
+            "word": "BUSINESS",
+            "start_time": 8.0,
+            "end_time": 8.269,
+            "confidence": 0.95
+        },
+        {
+            "word": "IN",
+            "start_time": 8.286,
+            "end_time": 8.503,
+            "confidence": 0.95
+        },
+        {
+            "word": "THIS",
+            "start_time": 8.571,
+            "end_time": 8.806,
+            "confidence": 0.95
+        },
+        {
+            "word": "MARKET",
+            "start_time": 8.857,
+            "end_time": 9.109,
+            "confidence": 0.95
+        },
+        {
+            "word": "ON",
+            "start_time": 9.143,
+            "end_time": 9.36,
+            "confidence": 0.95
+        },
+        {
+            "word": "MY",
+            "start_time": 9.429,
+            "end_time": 9.646,
+            "confidence": 0.95
+        },
+        {
+            "word": "LEARNING",
+            "start_time": 9.714,
+            "end_time": 9.983,
+            "confidence": 0.95
+        }
+    ],
+    "language": "en-US",
+    "model": "speechbrain-conformer-rnnt",
+    "processing_time_ms": 16459.45,
+    "audio_duration_s": 10.0,
+    "real_time_factor": 1.646,
+    "timestamp": "2025-08-28T05:01:07.606883",
+    "actual_transcription": true,
+    "architecture": "RNN-T Conformer",
+    "gpu_accelerated": true,
+    "source": "s3://dbm-cf-2-web/users/01ebc530-5041-7042-936c-6e516c3a0d20/audio/sessions/1b3fd9db-dfb0-4360-913f-7096d62c1b0a/chunk-002.wav"
+}

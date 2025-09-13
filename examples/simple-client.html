@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal RNN-T WebSocket Example</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #transcript {
+            border: 1px solid #ccc;
+            padding: 20px;
+            margin: 20px 0;
+            min-height: 200px;
+            background: #f5f5f5;
+        }
+        .status {
+            color: #666;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Minimal RNN-T Streaming Example</h1>
+    <p>This is a minimal implementation showing how to stream audio to the RNN-T server.</p>
+    
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+    
+    <div class="status" id="status">Ready</div>
+    <div id="transcript"></div>
+
+    <script>
+        // Minimal WebSocket streaming implementation (< 100 lines)
+        
+        const SERVER_URL = `ws://${window.location.hostname}:8000/ws/transcribe`;
+        let ws = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        
+        // Connect to WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket(SERVER_URL);
+            ws.binaryType = 'arraybuffer';
+            
+            ws.onopen = () => {
+                updateStatus('Connected to server');
+                document.getElementById('startBtn').disabled = false;
+            };
+            
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'transcription' && message.text) {
+                    addTranscript(message.text);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                updateStatus('Connection error', 'error');
+                console.error(error);
+            };
+            
+            ws.onclose = () => {
+                updateStatus('Disconnected');
+                setTimeout(connectWebSocket, 1000);
+            };
+        }
+        
+        // Start recording
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Create audio context for processing
+                audioContext = new AudioContext({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                // Send start message
+                ws.send(JSON.stringify({ type: 'start_recording' }));
+                
+                // Process and send audio chunks
+                processor.onaudioprocess = (e) => {
+                    const float32 = e.inputBuffer.getChannelData(0);
+                    const int16 = new Int16Array(float32.length);
+                    
+                    // Convert float32 to int16
+                    for (let i = 0; i < float32.length; i++) {
+                        const s = Math.max(-1, Math.min(1, float32[i]));
+                        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Send audio data
+                    ws.send(int16.buffer);
+                };
+                
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                updateStatus('Recording...');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                
+            } catch (error) {
+                updateStatus('Failed to start recording', 'error');
+                console.error(error);
+            }
+        }
+        
+        // Stop recording
+        function stopRecording() {
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            ws.send(JSON.stringify({ type: 'stop_recording' }));
+            
+            updateStatus('Stopped');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+        }
+        
+        // UI helpers
+        function updateStatus(text) {
+            document.getElementById('status').textContent = `Status: ${text}`;
+        }
+        
+        function addTranscript(text) {
+            const transcript = document.getElementById('transcript');
+            transcript.innerHTML += `<p>${text}</p>`;
+            transcript.scrollTop = transcript.scrollHeight;
+        }
+        
+        // Event listeners
+        document.getElementById('startBtn').onclick = startRecording;
+        document.getElementById('stopBtn').onclick = stopRecording;
+        
+        // Initialize
+        connectWebSocket();
+    </script>
+</body>
+</html>

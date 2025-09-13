@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RNN-T Audio File Upload Demo</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            margin: 0; padding: 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            border-radius: 12px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header { 
+            background: linear-gradient(45deg, #2196F3, #21CBF3); 
+            color: white; 
+            padding: 30px; 
+            text-align: center; 
+        }
+        .header h1 { margin: 0; font-size: 2.5em; }
+        .header p { margin: 10px 0 0; opacity: 0.9; }
+        .content { padding: 30px; }
+        .upload-area { 
+            border: 3px dashed #ddd; 
+            border-radius: 8px; 
+            padding: 40px; 
+            text-align: center; 
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover { border-color: #2196F3; background: #f8f9ff; }
+        .upload-area.dragover { border-color: #2196F3; background: #e3f2fd; }
+        input[type="file"] { display: none; }
+        .btn { 
+            background: #2196F3; 
+            color: white; 
+            border: none; 
+            padding: 12px 24px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 16px;
+            margin: 10px;
+            transition: background 0.3s;
+        }
+        .btn:hover { background: #1976D2; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+        .result { 
+            margin: 20px 0; 
+            padding: 20px; 
+            background: #f5f5f5; 
+            border-radius: 8px;
+            display: none;
+        }
+        .result.show { display: block; }
+        .transcript { 
+            background: white; 
+            padding: 15px; 
+            border-radius: 6px; 
+            border-left: 4px solid #4CAF50;
+            margin: 10px 0;
+        }
+        .loading { 
+            display: none; 
+            text-align: center; 
+            padding: 20px;
+        }
+        .loading.show { display: block; }
+        .spinner { 
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+            margin: 0 auto 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .info { background: #e3f2fd; padding: 15px; border-radius: 6px; margin: 20px 0; }
+        .error { background: #ffebee; color: #c62828; padding: 15px; border-radius: 6px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 RNN-T Audio Upload Demo</h1>
+            <p>Upload audio files for GPU-accelerated speech recognition</p>
+        </div>
+        
+        <div class="content">
+            <div class="info">
+                <strong>📝 Note:</strong> This demo works with HTTP and doesn't require microphone access.
+                Upload audio files (WAV, MP3, M4A) for transcription.
+            </div>
+            
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <div style="font-size: 48px; margin-bottom: 10px;">🎤</div>
+                <h3>Click to Select Audio File</h3>
+                <p>Or drag and drop your audio file here</p>
+                <p style="color: #666; font-size: 14px;">Supported: WAV, MP3, M4A, OGG</p>
+            </div>
+            
+            <input type="file" id="fileInput" accept="audio/*" />
+            
+            <div style="text-align: center;">
+                <button class="btn" id="uploadBtn" disabled>Upload & Transcribe</button>
+                <button class="btn" onclick="clearResults()">Clear Results</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing audio file... This may take a few seconds.</p>
+            </div>
+            
+            <div class="result" id="result">
+                <h3>📄 Transcription Results</h3>
+                <div id="transcript-content"></div>
+                <div id="file-info"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadArea = document.querySelector('.upload-area');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const transcriptContent = document.getElementById('transcript-content');
+        const fileInfo = document.getElementById('file-info');
+        
+        let selectedFile = null;
+        
+        // File selection
+        fileInput.addEventListener('change', handleFileSelect);
+        uploadBtn.addEventListener('click', uploadFile);
+        
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelect();
+            }
+        });
+        
+        function handleFileSelect() {
+            selectedFile = fileInput.files[0];
+            if (selectedFile) {
+                uploadBtn.disabled = false;
+                uploadArea.innerHTML = `
+                    <div style="font-size: 48px; margin-bottom: 10px;">📁</div>
+                    <h3>Selected: ${selectedFile.name}</h3>
+                    <p>Size: ${(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p style="color: #666;">Click "Upload & Transcribe" to process</p>
+                `;
+            }
+        }
+        
+        async function uploadFile() {
+            if (!selectedFile) return;
+            
+            // Show loading
+            loading.classList.add('show');
+            result.classList.remove('show');
+            uploadBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            
+            try {
+                const response = await fetch('/transcribe/file', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showResults(data, selectedFile);
+                } else {
+                    showError(data.detail || 'Transcription failed');
+                }
+                
+            } catch (error) {
+                showError(`Upload failed: ${error.message}`);
+            }
+            
+            // Hide loading
+            loading.classList.remove('show');
+            uploadBtn.disabled = false;
+        }
+        
+        function showResults(data, file) {
+            transcriptContent.innerHTML = `
+                <div class="transcript">
+                    <strong>Transcript:</strong><br>
+                    ${data.text || 'No speech detected'}
+                </div>
+            `;
+            
+            const duration = data.audio_duration_s ? `${data.audio_duration_s.toFixed(2)}s` : 'Unknown';
+            const confidence = data.confidence ? `${(data.confidence * 100).toFixed(1)}%` : 'N/A';
+            const processingTime = data.processing_time_ms ? `${data.processing_time_ms.toFixed(0)}ms` : 'N/A';
+            
+            fileInfo.innerHTML = `
+                <p><strong>File:</strong> ${file.name}</p>
+                <p><strong>Size:</strong> ${(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                <p><strong>Duration:</strong> ${duration}</p>
+                <p><strong>Confidence:</strong> ${confidence}</p>
+                <p><strong>Processing Time:</strong> ${processingTime}</p>
+                <p><strong>Model:</strong> ${data.model || 'RNN-T Conformer'}</p>
+                <p><strong>GPU Accelerated:</strong> ${data.gpu_accelerated ? '✅ Yes' : '❌ No'}</p>
+            `;
+            
+            result.classList.add('show');
+        }
+        
+        function showError(message) {
+            transcriptContent.innerHTML = `<div class="error">❌ ${message}</div>`;
+            result.classList.add('show');
+        }
+        
+        function clearResults() {
+            result.classList.remove('show');
+            selectedFile = null;
+            fileInput.value = '';
+            uploadBtn.disabled = true;
+            uploadArea.innerHTML = `
+                <div style="font-size: 48px; margin-bottom: 10px;">🎤</div>
+                <h3>Click to Select Audio File</h3>
+                <p>Or drag and drop your audio file here</p>
+                <p style="color: #666; font-size: 14px;">Supported: WAV, MP3, M4A, OGG</p>
+            `;
+        }
+    </script>
+</body>
+</html>

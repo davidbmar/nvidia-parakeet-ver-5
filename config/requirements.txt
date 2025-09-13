@@ -1,0 +1,50 @@
+# Production Riva ASR Server Requirements
+# Optimized for remote GPU deployment with NVIDIA Riva/NIM
+
+# NVIDIA Riva client
+nvidia-riva-client>=2.15.0
+grpcio>=1.51.0
+grpcio-tools>=1.51.0
+protobuf>=3.20.0
+
+# Core dependencies (reduced - no local model needed)
+torch>=2.0.0,<2.1.0  # Still needed for audio tensor operations (Python 3.8 compatible)
+torchaudio>=2.0.0,<2.1.0  # For audio processing (Python 3.8 compatible)
+numpy>=1.21.0,<1.25.0
+
+# Web server
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
+python-multipart>=0.0.6
+websockets>=11.0
+
+# Audio processing
+soundfile>=0.12.1
+librosa>=0.10.0
+scipy>=1.10.0,<1.11.0  # For audio resampling (Python 3.8 compatible)
+
+# AWS integration
+boto3>=1.26.0
+botocore>=1.29.0
+
+# Configuration & Environment
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Observability
+python-json-logger>=2.0.0
+psutil>=5.9.0
+prometheus-client>=0.16.0
+opentelemetry-api>=1.17.0
+opentelemetry-sdk>=1.17.0
+opentelemetry-instrumentation-fastapi>=0.38b0
+
+# Optional: For enhanced performance
+nvidia-ml-py3>=7.352.0  # GPU monitoring on worker
+# tensorrt>=8.6.0       # TensorRT is handled by Riva
+
+# Development/testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+httpx>=0.24.0  # For testing FastAPI endpoints

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Audio Recording</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            margin: 20px; 
+            background: #f0f0f0; 
+        }
+        .container { 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+        }
+        .step { 
+            margin: 15px 0; 
+            padding: 10px; 
+            border: 2px solid #ddd; 
+            border-radius: 5px; 
+        }
+        .step.success { border-color: #4CAF50; background: #e8f5e9; }
+        .step.error { border-color: #f44336; background: #ffebee; }
+        .step.pending { border-color: #ff9800; background: #fff3e0; }
+        button { 
+            background: #2196F3; 
+            color: white; 
+            border: none; 
+            padding: 10px 15px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 5px; 
+        }
+        button:hover { background: #1976D2; }
+        .log { 
+            background: #000; 
+            color: #0f0; 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin: 10px 0; 
+            min-height: 100px; 
+            font-family: monospace; 
+            white-space: pre-wrap; 
+            overflow-y: auto;
+            max-height: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Audio Recording Debug</h1>
+        <p>This will diagnose exactly what's failing with audio recording.</p>
+        
+        <button onclick="testStep1()">Step 1: Test Microphone Access</button>
+        <button onclick="testStep2()">Step 2: Test Audio Context</button>
+        <button onclick="testStep3()">Step 3: Test WebSocket</button>
+        <button onclick="testStep4()">Step 4: Test Full Recording</button>
+        <button onclick="clearLog()">Clear Log</button>
+        
+        <div id="steps">
+            <div id="step1" class="step pending">
+                <h3>Step 1: Microphone Access</h3>
+                <p>Status: <span id="step1-status">Not tested</span></p>
+            </div>
+            <div id="step2" class="step pending">
+                <h3>Step 2: Audio Context Creation</h3>
+                <p>Status: <span id="step2-status">Not tested</span></p>
+            </div>
+            <div id="step3" class="step pending">
+                <h3>Step 3: WebSocket Connection</h3>
+                <p>Status: <span id="step3-status">Not tested</span></p>
+            </div>
+            <div id="step4" class="step pending">
+                <h3>Step 4: Full Recording Pipeline</h3>
+                <p>Status: <span id="step4-status">Not tested</span></p>
+            </div>
+        </div>
+        
+        <div class="log" id="log">Loading debug tools...</div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        
+        function logMessage(message) {
+            const timestamp = new Date().toISOString().substr(11, 12);
+            log.textContent += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function clearLog() {
+            log.textContent = '';
+        }
+        
+        function setStepStatus(stepId, status, message) {
+            const step = document.getElementById(stepId);
+            const statusSpan = document.getElementById(`${stepId}-status`);
+            
+            step.className = `step ${status}`;
+            statusSpan.textContent = message;
+        }
+        
+        async function testStep1() {
+            logMessage('=== STEP 1: Testing microphone access ===');
+            setStepStatus('step1', 'pending', 'Testing...');
+            
+            // Check if getUserMedia is available
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                logMessage('❌ navigator.mediaDevices.getUserMedia is not available');
+                if (location.protocol === 'http:' && location.hostname !== 'localhost') {
+                    logMessage('💡 SOLUTION: This page is loaded over HTTP, but microphone access requires HTTPS');
+                    logMessage('💡 Try one of these options:');
+                    logMessage('   1. Use localhost instead of IP: http://localhost:8000/static/debug-recording.html');
+                    logMessage('   2. Set up HTTPS/SSL certificate');
+                    logMessage('   3. Use Chrome with --unsafely-treat-insecure-origin-as-secure flag');
+                } else if (!navigator.mediaDevices) {
+                    logMessage('💡 SOLUTION: Your browser doesn\'t support the MediaDevices API');
+                    logMessage('💡 Try updating to a modern browser (Chrome, Firefox, Safari, Edge)');
+                }
+                setStepStatus('step1', 'error', '❌ MediaDevices API not available');
+                return;
+            }
+            
+            try {
+                logMessage('Requesting microphone permission...');
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                logMessage('✅ Microphone access granted!');
+                logMessage(`Tracks: ${stream.getTracks().length}`);
+                logMessage(`Audio track: ${stream.getAudioTracks()[0]?.label || 'Unknown'}`);
+                
+                // Test constraints
+                const track = stream.getAudioTracks()[0];
+                const settings = track.getSettings();
+                logMessage(`Settings: ${JSON.stringify(settings, null, 2)}`);
+                
+                // Clean up
+                stream.getTracks().forEach(track => track.stop());
+                
+                setStepStatus('step1', 'success', '✅ Microphone access working');
+                
+            } catch (error) {
+                logMessage(`❌ Microphone access failed: ${error.name}: ${error.message}`);
+                setStepStatus('step1', 'error', `❌ ${error.name}: ${error.message}`);
+                
+                if (error.name === 'NotAllowedError') {
+                    logMessage('💡 Solution: Check browser permissions or use HTTPS');
+                } else if (error.name === 'NotFoundError') {
+                    logMessage('💡 Solution: Check if microphone is connected');
+                } else if (error.name === 'NotSupportedError') {
+                    logMessage('💡 Solution: Try different browser or check HTTP/HTTPS');
+                }
+            }
+        }
+        
+        async function testStep2() {
+            logMessage('=== STEP 2: Testing Audio Context ===');
+            setStepStatus('step2', 'pending', 'Testing...');
+            
+            try {
+                logMessage('Creating AudioContext...');
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000
+                });
+                
+                logMessage(`✅ AudioContext created successfully`);
+                logMessage(`Sample rate: ${audioContext.sampleRate}`);
+                logMessage(`State: ${audioContext.state}`);
+                
+                // Test if we need to resume
+                if (audioContext.state === 'suspended') {
+                    logMessage('AudioContext suspended, attempting to resume...');
+                    await audioContext.resume();
+                    logMessage(`AudioContext resumed, state: ${audioContext.state}`);
+                }
+                
+                // Test creating processors
+                logMessage('Testing ScriptProcessor creation...');
+                const processor = audioContext.createScriptProcessor(1024, 1, 1);
+                logMessage('✅ ScriptProcessor created');
+                
+                processor.disconnect();
+                audioContext.close();
+                
+                setStepStatus('step2', 'success', '✅ AudioContext working');
+                
+            } catch (error) {
+                logMessage(`❌ AudioContext failed: ${error.name}: ${error.message}`);
+                setStepStatus('step2', 'error', `❌ ${error.name}: ${error.message}`);
+            }
+        }
+        
+        async function testStep3() {
+            logMessage('=== STEP 3: Testing WebSocket Connection ===');
+            setStepStatus('step3', 'pending', 'Testing...');
+            
+            try {
+                logMessage('Connecting to WebSocket...');
+                const ws = new WebSocket(`ws://${location.hostname}:8000/ws/transcribe?client_id=debug_test`);
+                
+                const timeout = setTimeout(() => {
+                    ws.close();
+                    throw new Error('WebSocket connection timeout');
+                }, 10000);
+                
+                ws.onopen = () => {
+                    logMessage('✅ WebSocket connected successfully');
+                    clearTimeout(timeout);
+                    setStepStatus('step3', 'success', '✅ WebSocket connection working');
+                    
+                    setTimeout(() => ws.close(), 1000);
+                };
+                
+                ws.onerror = (error) => {
+                    logMessage(`❌ WebSocket error: ${error}`);
+                    clearTimeout(timeout);
+                    setStepStatus('step3', 'error', '❌ WebSocket connection failed');
+                };
+                
+                ws.onmessage = (event) => {
+                    logMessage(`📨 WebSocket message: ${event.data}`);
+                };
+                
+                ws.onclose = (event) => {
+                    logMessage(`WebSocket closed: code=${event.code}, reason=${event.reason}`);
+                };
+                
+            } catch (error) {
+                logMessage(`❌ WebSocket test failed: ${error.message}`);
+                setStepStatus('step3', 'error', `❌ ${error.message}`);
+            }
+        }
+        
+        async function testStep4() {
+            logMessage('=== STEP 4: Testing Full Recording Pipeline ===');
+            setStepStatus('step4', 'pending', 'Testing...');
+            
+            try {
+                // Step 4a: Get microphone
+                logMessage('Getting microphone access...');
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Step 4b: Create audio context
+                logMessage('Creating audio context...');
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+                
+                // Step 4c: Create processing chain
+                logMessage('Creating audio processing chain...');
+                const source = audioContext.createMediaStreamSource(stream);
+                const processor = audioContext.createScriptProcessor(1024, 1, 1);
+                
+                let chunkCount = 0;
+                processor.onaudioprocess = (e) => {
+                    chunkCount++;
+                    if (chunkCount % 50 === 0) {
+                        logMessage(`Processing audio chunk ${chunkCount}`);
+                    }
+                };
+                
+                // Step 4d: Connect WebSocket
+                logMessage('Connecting WebSocket...');
+                const ws = new WebSocket(`ws://${location.hostname}:8000/ws/transcribe?client_id=full_test`);
+                
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => reject(new Error('WebSocket timeout')), 5000);
+                    ws.onopen = () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    };
+                    ws.onerror = (error) => {
+                        clearTimeout(timeout);
+                        reject(error);
+                    };
+                });
+                
+                // Step 4e: Connect and test
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                logMessage('✅ Full pipeline connected, testing for 3 seconds...');
+                
+                setTimeout(() => {
+                    // Cleanup
+                    processor.disconnect();
+                    source.disconnect();
+                    stream.getTracks().forEach(track => track.stop());
+                    audioContext.close();
+                    ws.close();
+                    
+                    logMessage(`✅ Full test completed! Processed ${chunkCount} audio chunks`);
+                    setStepStatus('step4', 'success', `✅ Full pipeline working (${chunkCount} chunks)`);
+                }, 3000);
+                
+            } catch (error) {
+                logMessage(`❌ Full pipeline test failed: ${error.message}`);
+                setStepStatus('step4', 'error', `❌ ${error.message}`);
+            }
+        }
+        
+        // Initialize
+        clearLog();
+        logMessage('Debug tools ready. Click buttons to test each step.');
+    </script>
+</body>
+</html>

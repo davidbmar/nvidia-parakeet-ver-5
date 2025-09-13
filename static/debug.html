@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Compatibility Debug</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }
+        .test { 
+            margin: 10px 0; 
+            padding: 10px; 
+            border-left: 4px solid #ccc; 
+            background: #f8f8f8; 
+        }
+        .pass { border-left-color: #4CAF50; background: #e8f5e9; }
+        .fail { border-left-color: #f44336; background: #ffebee; }
+        .info { margin: 5px 0; color: #666; }
+        button { 
+            background: #2196F3; 
+            color: white; 
+            border: none; 
+            padding: 10px 15px; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            margin: 5px; 
+        }
+        button:hover { background: #1976D2; }
+        #log { 
+            background: #000; 
+            color: #0f0; 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin-top: 10px; 
+            min-height: 100px; 
+            font-family: monospace; 
+            white-space: pre-wrap; 
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Browser Compatibility Debug</h1>
+        <p>This page helps diagnose WebRTC and audio API issues.</p>
+        
+        <div id="tests"></div>
+        
+        <div style="margin: 20px 0;">
+            <button onclick="testMicrophoneAccess()">Test Microphone Access</button>
+            <button onclick="testWebSocket()">Test WebSocket</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="log">Loading tests...</div>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        const testsDiv = document.getElementById('tests');
+        
+        function logMessage(message) {
+            const timestamp = new Date().toISOString().substr(11, 8);
+            log.textContent += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function clearLog() {
+            log.textContent = '';
+        }
+        
+        function createTest(name, status, details) {
+            const div = document.createElement('div');
+            div.className = `test ${status}`;
+            div.innerHTML = `
+                <strong>${name}:</strong> ${status.toUpperCase()}
+                <div class="info">${details}</div>
+            `;
+            testsDiv.appendChild(div);
+        }
+        
+        function runCompatibilityTests() {
+            testsDiv.innerHTML = '';
+            logMessage('Starting compatibility tests...');
+            
+            // Test 1: HTTPS
+            const isHTTPS = location.protocol === 'https:';
+            createTest('HTTPS Protocol', isHTTPS ? 'pass' : 'fail', 
+                       `Current protocol: ${location.protocol}. HTTPS required for microphone access.`);
+            logMessage(`HTTPS: ${isHTTPS} (${location.protocol})`);
+            
+            // Test 2: Navigator.mediaDevices
+            const hasMediaDevices = !!(navigator.mediaDevices);
+            createTest('MediaDevices API', hasMediaDevices ? 'pass' : 'fail',
+                       hasMediaDevices ? 'navigator.mediaDevices is available' : 'navigator.mediaDevices is not available');
+            logMessage(`MediaDevices: ${hasMediaDevices}`);
+            
+            // Test 3: getUserMedia
+            const hasGetUserMedia = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+            createTest('getUserMedia API', hasGetUserMedia ? 'pass' : 'fail',
+                       hasGetUserMedia ? 'getUserMedia is available' : 'getUserMedia is not available');
+            logMessage(`getUserMedia: ${hasGetUserMedia}`);
+            
+            // Test 4: AudioContext
+            const hasAudioContext = !!(window.AudioContext || window.webkitAudioContext);
+            createTest('AudioContext API', hasAudioContext ? 'pass' : 'fail',
+                       hasAudioContext ? 'AudioContext is available' : 'AudioContext is not available');
+            logMessage(`AudioContext: ${hasAudioContext}`);
+            
+            // Test 5: WebSocket
+            const hasWebSocket = !!(window.WebSocket);
+            createTest('WebSocket API', hasWebSocket ? 'pass' : 'fail',
+                       hasWebSocket ? 'WebSocket is available' : 'WebSocket is not available');
+            logMessage(`WebSocket: ${hasWebSocket}`);
+            
+            // Test 6: Browser info
+            createTest('Browser Info', 'info', 
+                       `${navigator.userAgent}`);
+            logMessage(`User Agent: ${navigator.userAgent}`);
+            
+            // Overall AudioRecorder support
+            const isSupported = !!(
+                navigator.mediaDevices &&
+                navigator.mediaDevices.getUserMedia &&
+                (window.AudioContext || window.webkitAudioContext)
+            );
+            
+            createTest('AudioRecorder Support', isSupported ? 'pass' : 'fail',
+                       isSupported ? 'All required APIs are available' : 'Some required APIs are missing');
+            logMessage(`AudioRecorder supported: ${isSupported}`);
+            
+            logMessage('Compatibility tests completed.');
+        }
+        
+        async function testMicrophoneAccess() {
+            logMessage('Testing microphone access...');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                logMessage('✅ Microphone access granted!');
+                
+                // Stop the stream immediately
+                stream.getTracks().forEach(track => track.stop());
+                logMessage('Microphone stream stopped.');
+                
+                createTest('Microphone Access Test', 'pass', 'Successfully obtained microphone permission');
+            } catch (error) {
+                logMessage(`❌ Microphone access failed: ${error.message}`);
+                createTest('Microphone Access Test', 'fail', `Error: ${error.message}`);
+                
+                if (error.name === 'NotAllowedError') {
+                    logMessage('Suggestion: Check browser permissions and allow microphone access');
+                } else if (error.name === 'NotSupportedError') {
+                    logMessage('Suggestion: Try using HTTPS instead of HTTP');
+                }
+            }
+        }
+        
+        async function testWebSocket() {
+            logMessage('Testing WebSocket connection...');
+            try {
+                const ws = new WebSocket(`ws://${location.hostname}:8000/ws/transcribe?client_id=debug`);
+                
+                ws.onopen = () => {
+                    logMessage('✅ WebSocket connected successfully!');
+                    createTest('WebSocket Connection Test', 'pass', 'Successfully connected to WebSocket server');
+                    ws.close();
+                };
+                
+                ws.onerror = (error) => {
+                    logMessage(`❌ WebSocket connection failed: ${error}`);
+                    createTest('WebSocket Connection Test', 'fail', 'Failed to connect to WebSocket server');
+                };
+                
+                ws.onmessage = (event) => {
+                    logMessage(`WebSocket message: ${event.data}`);
+                };
+                
+                ws.onclose = () => {
+                    logMessage('WebSocket connection closed.');
+                };
+                
+            } catch (error) {
+                logMessage(`❌ WebSocket test failed: ${error.message}`);
+                createTest('WebSocket Connection Test', 'fail', `Error: ${error.message}`);
+            }
+        }
+        
+        // Run tests on load
+        runCompatibilityTests();
+    </script>
+</body>
+</html>
