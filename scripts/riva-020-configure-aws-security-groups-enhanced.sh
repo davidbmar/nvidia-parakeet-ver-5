@@ -340,11 +340,39 @@ fi
 echo -e "\n${BLUE}🔍 Final Security Group Configuration${NC}"
 echo "================================================================"
 
+# Get all rules and display them properly
+echo "Configured Security Rules:"
+echo "-------------------------"
 aws ec2 describe-security-groups \
     --region "$AWS_REGION" \
     --group-ids "$SECURITY_GROUP_ID" \
-    --query "SecurityGroups[0].IpPermissions[].[FromPort,ToPort,IpRanges[0].CidrIp]" \
-    --output table 2>/dev/null || echo "Failed to retrieve rules"
+    --output json 2>/dev/null | jq -r '
+    .SecurityGroups[0].IpPermissions[] |
+    "Port \(.FromPort): \([.IpRanges[].CidrIp] | join(", "))"
+    ' | sort -n | while read rule; do
+    echo "  $rule"
+done
+
+echo ""
+echo "Summary by IP Address:"
+echo "---------------------"
+# Get unique IPs and show what ports they can access
+aws ec2 describe-security-groups \
+    --region "$AWS_REGION" \
+    --group-ids "$SECURITY_GROUP_ID" \
+    --output json 2>/dev/null | jq -r '
+    .SecurityGroups[0].IpPermissions[].IpRanges[].CidrIp
+    ' | sort -u | while read ip; do
+    clean_ip=$(echo "$ip" | sed 's|/32||')
+    ports=$(aws ec2 describe-security-groups \
+        --region "$AWS_REGION" \
+        --group-ids "$SECURITY_GROUP_ID" \
+        --output json 2>/dev/null | jq -r --arg ip "$ip" '
+        .SecurityGroups[0].IpPermissions[] |
+        select(.IpRanges[].CidrIp == $ip) | .FromPort
+        ' | sort -n | tr '\n' ' ')
+    echo "  ${clean_ip}: ports ${ports}"
+done
 
 echo ""
 echo -e "${GREEN}✅ Security Configuration Complete!${NC}"
