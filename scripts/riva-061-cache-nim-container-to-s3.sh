@@ -31,7 +31,7 @@ S3_REGION="${AWS_REGION:-us-east-2}"
 CONTAINER_IMAGE="${NIM_IMAGE:-nvcr.io/nim/nvidia/parakeet-ctc-1.1b-asr:1.0.0}"
 CONTAINER_NAME=$(echo "$CONTAINER_IMAGE" | sed 's/.*\///; s/:/-/')
 S3_PATH="s3://${S3_BUCKET}/${S3_PREFIX}/${CONTAINER_NAME}.tar"
-LOCAL_CACHE_DIR="$HOME/nim-cache"
+LOCAL_CACHE_DIR="${NIM_CACHE_DIR:-$HOME/nim-cache}"
 
 print_step_header "1" "Check Prerequisites"
 

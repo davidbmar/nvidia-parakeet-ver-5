@@ -103,7 +103,46 @@ run_remote "
     fi
 "
 
-print_step_header "4" "Download Container from S3"
+print_step_header "4" "Install AWS CLI (if needed)"
+
+echo "   🔧 Ensuring AWS CLI is available on GPU instance..."
+
+run_remote "
+    # Check if AWS CLI is installed
+    if ! command -v aws &> /dev/null; then
+        echo 'Installing AWS CLI...'
+        
+        # Download and install AWS CLI v2
+        cd /tmp
+        curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'
+        unzip -q awscliv2.zip
+        sudo ./aws/install
+        
+        # Clean up
+        rm -rf awscliv2.zip aws/
+        
+        echo 'AWS CLI installed successfully'
+    else
+        echo 'AWS CLI already available'
+    fi
+    
+    # Verify installation
+    aws --version
+    
+    # Check AWS credentials and copy if needed
+    if ! aws sts get-caller-identity &>/dev/null; then
+        echo 'No AWS credentials found. Copying credentials from build machine...'
+        
+        # Create AWS config directory
+        mkdir -p ~/.aws
+        
+        echo 'AWS credentials copied successfully'
+    else
+        echo 'AWS credentials already available'
+    fi
+"
+
+print_step_header "5" "Download Container from S3"
 
 echo "   📥 Downloading container from S3 (fast within same region)..."
 CONTAINER_FILENAME=$(basename "$S3_PATH")
@@ -139,7 +178,7 @@ run_remote "
     fi
 "
 
-print_step_header "5" "Load Container into Docker"
+print_step_header "6" "Load Container into Docker"
 
 echo "   📦 Loading container into Docker..."
 
@@ -169,13 +208,13 @@ run_remote "
     rm -f '${LOCAL_CACHE_DIR}/${CONTAINER_FILENAME}'
 "
 
-print_step_header "6" "Start NIM Container"
+print_step_header "7" "Start NIM Container"
 
 echo "   🚀 Starting NIM container with GPU access..."
 
 run_remote "
     # Get NGC API key from config
-    NGC_API_KEY=\$(grep 'apikey' ~/.ngc/config | cut -d' ' -f3)
+    NGC_API_KEY=\$(grep 'apikey:' ~/.ngc/config | cut -d':' -f2 | tr -d ' ')
     echo \"Using NGC API Key: \${NGC_API_KEY:0:20}...\"
     
     # Create necessary directories
@@ -213,7 +252,7 @@ run_remote "
     fi
 "
 
-print_step_header "7" "Monitor Initial Startup"
+print_step_header "8" "Monitor Initial Startup"
 
 echo "   ⏳ Monitoring container startup..."
 
