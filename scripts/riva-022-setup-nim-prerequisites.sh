@@ -62,16 +62,32 @@ for var in "${required_nim_vars[@]}"; do
 done
 
 if [ ${#missing_vars[@]} -gt 0 ]; then
-    echo "❌ Missing NIM configuration variables: ${missing_vars[*]}"
+    echo "⚠️  Missing NIM configuration variables: ${missing_vars[*]}"
     echo ""
-    echo "🔧 Adding default NIM configuration to .env..."
-    
+    echo "🎯 Selecting Default NIM Model:"
+    echo "   Using: Parakeet CTC 1.1B ASR (T4 optimized)"
+    echo "   Size: 6.84GB (best for g4dn.xlarge T4 GPU)"
+    echo "   Performance: Fast inference, good accuracy for English"
+    echo ""
+    echo "📋 Other Available Models:"
+    echo "   • parakeet-tdt-0.6b-v2:1.0.0 (19.4GB, newer TDT architecture)"
+    echo "   • parakeet-1-1b-rnnt:1.0.0 (19.47GB, multilingual support)"
+    echo ""
+    echo "💡 To use a different model, edit .env after this script completes:"
+    echo "   NIM_IMAGE=nvcr.io/nim/nvidia/[model-name]:[version]"
+    echo ""
+    echo "🔧 Adding default configuration to .env..."
+
     # Add NIM configuration if missing
     cat >> "$SCRIPT_DIR/../.env" << 'EOF'
 
 # ============================================================================
 # NIM Container Configuration (auto-added by riva-022)
 # ============================================================================
+# Default: Parakeet CTC 1.1B ASR - T4 optimized (6.84GB)
+# Alternatives:
+#   nvcr.io/nim/nvidia/parakeet-tdt-0.6b-v2:1.0.0 (19.4GB, TDT architecture)
+#   nvcr.io/nim/nvidia/parakeet-1-1b-rnnt:1.0.0 (19.47GB, multilingual)
 NIM_CONTAINER_NAME=parakeet-nim-ctc-t4
 NIM_IMAGE=nvcr.io/nim/nvidia/parakeet-ctc-1.1b-asr:1.0.0
 NIM_TAGS_SELECTOR=ctc-streaming
@@ -79,10 +95,11 @@ NIM_MODEL_NAME=parakeet-ctc-1.1b-asr
 NIM_HTTP_API_PORT=9000
 NIM_GRPC_PORT=50051
 EOF
-    
+
     # Reload .env to get new variables
     source "$SCRIPT_DIR/../.env"
-    echo "   ✅ Added NIM configuration to .env"
+    echo "   ✅ Default NIM configuration added to .env"
+    echo "   📝 Model selected: Parakeet CTC 1.1B ASR (6.84GB)"
 else
     echo "   ✅ NIM configuration complete"
 fi
