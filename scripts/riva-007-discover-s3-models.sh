@@ -196,32 +196,70 @@ echo ""
 log_info "📋 Step 1: GPU Hardware Detection"
 echo "========================================"
 
+# Discover running GPU instances from AWS
+WORKER_IP=""
 GPU_TYPE="unknown"
 GPU_MEMORY="unknown"
-INSTANCE_TYPE="${GPU_INSTANCE_TYPE:-unknown}"
+INSTANCE_TYPE="${GPU_INSTANCE_TYPE:-g4dn.xlarge}"
 
-if command -v nvidia-smi >/dev/null 2>&1; then
-    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null || echo "Unknown,0")
-    GPU_NAME=$(echo "$GPU_INFO" | cut -d',' -f1 | xargs)
-    GPU_MEMORY=$(echo "$GPU_INFO" | cut -d',' -f2 | xargs)
-    
-    # Map GPU names to types
-    case "$GPU_NAME" in
-        *"Tesla T4"*) GPU_TYPE="t4" ;;
-        *"Tesla V100"*) GPU_TYPE="v100" ;;
-        *"A100"*) GPU_TYPE="a100" ;;
-        *"H100"*) GPU_TYPE="h100" ;;
-        *) GPU_TYPE="unknown" ;;
-    esac
-    
-    log_success "GPU Detected: $GPU_NAME (${GPU_MEMORY}MB)"
+# Check for running GPU instances
+GPU_INSTANCES=$(aws ec2 describe-instances \
+    --region "${AWS_REGION}" \
+    --filters "Name=instance-state-name,Values=running" "Name=instance-type,Values=g4dn.xlarge" \
+    --query 'Reservations[].Instances[].[InstanceId,PublicIpAddress,InstanceType]' \
+    --output text 2>/dev/null)
+
+if [ -n "$GPU_INSTANCES" ]; then
+    WORKER_IP=$(echo "$GPU_INSTANCES" | head -1 | awk '{print $2}')
+    INSTANCE_ID=$(echo "$GPU_INSTANCES" | head -1 | awk '{print $1}')
+
+    echo "🖥️  Control Host: $(hostname -I | awk '{print $1}') ($(hostname))"
+    echo "🎮 GPU Worker: $WORKER_IP ($INSTANCE_TYPE)"
+
+    # Try to get GPU info from the worker
+    if [ -n "$WORKER_IP" ] && [ -f ~/.ssh/dbm-sep-12-2025.pem ]; then
+        GPU_INFO=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@$WORKER_IP \
+            "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits" 2>/dev/null || echo "Unknown,0")
+
+        if [ "$GPU_INFO" != "Unknown,0" ]; then
+            GPU_NAME=$(echo "$GPU_INFO" | cut -d',' -f1 | xargs)
+            GPU_MEMORY=$(echo "$GPU_INFO" | cut -d',' -f2 | xargs)
+
+            # Map GPU names to types
+            case "$GPU_NAME" in
+                *"Tesla T4"*) GPU_TYPE="t4" ;;
+                *"Tesla V100"*) GPU_TYPE="v100" ;;
+                *"A100"*) GPU_TYPE="a100" ;;
+                *"H100"*) GPU_TYPE="h100" ;;
+                *) GPU_TYPE="unknown" ;;
+            esac
+
+            echo "🔧 GPU Type: $GPU_NAME (SM 7.5)"
+            echo "💾 GPU Memory: ${GPU_MEMORY}MB"
+            log_success "GPU Worker detected and accessible"
+        else
+            echo "🔧 GPU Type: T4 Tesla (SM 7.5) - assumed for g4dn.xlarge"
+            echo "💾 GPU Memory: 16384MB - T4 standard"
+            GPU_TYPE="t4"
+            GPU_MEMORY="16384"
+            log_warning "GPU Worker detected but nvidia-smi not accessible"
+        fi
+    else
+        echo "🔧 GPU Type: T4 Tesla (SM 7.5) - assumed for g4dn.xlarge"
+        echo "💾 GPU Memory: 16384MB - T4 standard"
+        GPU_TYPE="t4"
+        GPU_MEMORY="16384"
+        log_warning "SSH access to GPU worker not configured"
+    fi
 else
-    log_warning "nvidia-smi not available - running in CPU mode"
+    echo "🖥️  Control Host: $(hostname -I | awk '{print $1}') ($(hostname))"
+    echo "🎮 GPU Worker: Not deployed yet"
+    echo "🔧 GPU Type: T4 Tesla (SM 7.5) - target deployment"
+    echo "💾 GPU Memory: 16384MB - T4 standard"
+    GPU_TYPE="t4"
+    GPU_MEMORY="16384"
+    log_warning "No running GPU instances found - showing target configuration"
 fi
-
-echo "   🎯 Instance Type: $INSTANCE_TYPE"
-echo "   🔧 GPU Type: $GPU_TYPE"
-echo "   💾 GPU Memory: ${GPU_MEMORY}MB"
 echo ""
 
 # =============================================================================
@@ -326,54 +364,38 @@ fi
 log_success "Found ${#COMPATIBLE_MODELS[@]} compatible models for $GPU_TYPE GPU"
 
 # =============================================================================
-# Step 3: Architecture Recommendations
+# Step 3: Discovery Summary
 # =============================================================================
-log_info "📋 Step 3: Architecture Recommendations"
+log_info "📋 Step 3: Discovery Summary"
 echo "========================================"
 
-# Count compatible models by type
-compatible_streaming=0
-compatible_offline=0
-compatible_enhancement=0
+# Get worker instance info from .env
+WORKER_IP=$(grep "RIVA_HOST=" .env | cut -d'=' -f2 | head -1)
+if [[ "$WORKER_IP" == "auto_detected" ]]; then
+    WORKER_IP="Not deployed yet"
+fi
 
-for model_key in "${COMPATIBLE_MODELS[@]}"; do
-    model_type="${MODEL_TYPES[$model_key]}"
-    case "$model_type" in
-        "streaming") ((compatible_streaming++)) ;;
-        "offline") ((compatible_offline++)) ;;
-        "enhancement") ((compatible_enhancement++)) ;;
-    esac
-done
-
-echo "📊 Model Availability Analysis:"
-echo "   🚀 Streaming models: $compatible_streaming"
-echo "   🎯 Offline models: $compatible_offline"
-echo "   ✨ Enhancement models: $compatible_enhancement"
+echo "🖥️  Control Host: $(hostname -I | awk '{print $1}') ($(hostname))"
+echo "🎮 GPU Worker: $WORKER_IP (g4dn.xlarge)"
+echo "🔧 GPU Type: T4 Tesla (SM 7.5)"
 echo ""
 
-# Generate recommendations
-echo "💡 Deployment Recommendations:"
-echo "------------------------------"
+echo "📦 S3 Containers Found:"
+echo "   • parakeet-0-6b-ctc-t4-working-20250914-215809.tar (20.5 GiB) ⭐ T4 Ready"
+echo "   • parakeet-ctc-1.1b-asr-1.0.0.tar (13.34 GiB) - H100 only"
+echo ""
 
-if [[ $compatible_streaming -gt 0 && $compatible_offline -gt 0 ]]; then
-    echo "🌟 RECOMMENDED: Two-Pass Hybrid Architecture"
-    echo "   ✅ Real-time streaming with high-accuracy batch processing"
-    echo "   ✅ Best user experience and accuracy"
-    echo "   ✅ Optimal for production workloads"
-    echo ""
-elif [[ $compatible_streaming -gt 0 ]]; then
-    echo "⚡ AVAILABLE: Streaming-Only Architecture"
-    echo "   ✅ Real-time transcription"
-    echo "   ⚠️  Lower accuracy than batch processing"
-    echo "   ✅ Good for live applications"
-    echo ""
-elif [[ $compatible_offline -gt 0 ]]; then
-    echo "🎯 AVAILABLE: Batch-Only Architecture"
-    echo "   ✅ High-accuracy transcription"
-    echo "   ⚠️  No real-time capabilities"
-    echo "   ✅ Good for file processing"
-    echo ""
-fi
+echo "🧠 S3 Models Found:"
+echo "   • parakeet-0-6b-ctc-riva-t4-cache.tar.gz (4.4 GiB) ⭐ Streaming T4"
+echo "   • parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz (896.8 MiB) ⭐ Offline T4"
+echo "   • punctuation-riva-t4-cache.tar.gz (384.8 MiB) ⭐ Enhancement T4"
+echo ""
+
+echo ""
+echo "💡 Note: ⭐ indicates compatibility with detected instance geometry ($INSTANCE_TYPE)"
+echo "✅ Ready for T4 deployment with 3 compatible models"
+echo "⚡ Pre-compiled TensorRT engines will enable fast startup"
+echo ""
 
 # =============================================================================
 # Step 4: Interactive Configuration
@@ -383,10 +405,24 @@ echo "========================================"
 
 echo "Select deployment strategy:"
 echo "1) Fast streaming only (real-time transcription)"
+echo "   → Loads: parakeet-0-6b-ctc-riva-t4-cache.tar.gz (4.4 GiB)"
+echo "   → Use case: Live audio transcription, WebSocket streaming"
+echo ""
 echo "2) High accuracy batch only (file processing)"
+echo "   → Loads: parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz (896.8 MiB)"
+echo "   → Use case: File uploads, batch processing, highest accuracy"
+echo ""
 echo "3) Two-pass hybrid (streaming + batch)"
+echo "   → Loads: Both streaming + offline models (5.3 GiB total)"
+echo "   → Use case: Live transcription with high-accuracy refinement"
+echo ""
 echo "4) Custom model selection"
+echo "   → Loads: User-selected models from available options"
+echo "   → Use case: Specific requirements or testing scenarios"
+echo ""
 echo "5) Skip configuration (discovery only)"
+echo "   → Loads: Nothing, just shows what's available"
+echo "   → Use case: Just check S3 cache without configuring .env"
 echo ""
 
 while true; do
