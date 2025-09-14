@@ -36,10 +36,8 @@ TEST_PREFIX="integration-test"
 TEMP_DIR="/tmp/nim-test-$(date +%s)"
 
 # Test files to download and test
-TEST_FILES=(
-    "00000-00060.webm"
-    "transcript-00000-00060.json"
-)
+AUDIO_FILE="00060-00120.webm"
+TRANSCRIPT_FILE="transcript-00060-00120.json"  # Optional - may not exist
 
 log_info "Step 1: Environment Setup"
 echo "  NIM Service: ${NIM_HOST}:${NIM_HTTP_PORT} (HTTP), ${NIM_HOST}:${NIM_GRPC_PORT} (gRPC)"
@@ -89,25 +87,35 @@ else
 fi
 
 log_info "Step 4: Download Test Files"
-for file in "${TEST_FILES[@]}"; do
-    echo -n "  Downloading ${file}: "
-    if aws s3 cp "s3://${TEST_BUCKET}/${TEST_PREFIX}/${file}" "./${file}" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ $(du -h "$file" | cut -f1)${NC}"
-    else
-        echo -e "${RED}❌ Failed${NC}"
-        exit 1
-    fi
-done
+echo -n "  Downloading ${AUDIO_FILE}: "
+if aws s3 cp "s3://${TEST_BUCKET}/${TEST_PREFIX}/${AUDIO_FILE}" "./${AUDIO_FILE}" >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ $(du -h "$AUDIO_FILE" | cut -f1)${NC}"
+else
+    echo -e "${RED}❌ Failed${NC}"
+    exit 1
+fi
 
-log_info "Step 5: Extract Expected Transcript"
-if [ -f "transcript-00000-00060.json" ]; then
+echo -n "  Downloading ${TRANSCRIPT_FILE}: "
+if aws s3 cp "s3://${TEST_BUCKET}/${TEST_PREFIX}/${TRANSCRIPT_FILE}" "./${TRANSCRIPT_FILE}" >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ $(du -h "$TRANSCRIPT_FILE" | cut -f1)${NC}"
+    HAVE_TRANSCRIPT=true
+else
+    echo -e "${YELLOW}⚠️ Not found (optional)${NC}"
+    HAVE_TRANSCRIPT=false
+fi
+
+log_info "Step 5: Expected Transcript"
+if [ "$HAVE_TRANSCRIPT" = true ] && [ -f "$TRANSCRIPT_FILE" ]; then
     log_result "Expected Transcript (first segment):"
-    echo "$(jq -r '.transcript.segments[0].text' transcript-00000-00060.json 2>/dev/null || echo "Could not parse expected transcript")" | fold -w 80 -s | sed 's/^/    /'
+    echo "$(jq -r '.transcript.segments[0].text' "$TRANSCRIPT_FILE" 2>/dev/null || echo "Could not parse expected transcript")" | fold -w 80 -s | sed 's/^/    /'
     echo ""
 
     # Get full expected text for comparison
-    EXPECTED_TEXT=$(jq -r '.transcript.segments[].text' transcript-00000-00060.json 2>/dev/null | tr '\n' ' ' | sed 's/^ *//; s/ *$//; s/  */ /g')
+    EXPECTED_TEXT=$(jq -r '.transcript.segments[].text' "$TRANSCRIPT_FILE" 2>/dev/null | tr '\n' ' ' | sed 's/^ *//; s/ *$//; s/  */ /g')
     echo "  Full Expected Text: $(echo "$EXPECTED_TEXT" | cut -c1-100)..."
+    echo ""
+else
+    echo "  No expected transcript available - will show ASR output only"
     echo ""
 fi
 
@@ -119,7 +127,7 @@ log_test "Attempt 1: Using language parameter only (correct NIM format)"
 if transcription_result=$(curl -s --max-time 60 -X POST "http://${NIM_HOST}:${NIM_HTTP_PORT}/v1/audio/transcriptions" \
     -H "Content-Type: multipart/form-data" \
     -F "language=en-US" \
-    -F "file=@00000-00060.webm" \
+    -F "file=@${AUDIO_FILE}" \
     -F "response_format=json" 2>/dev/null); then
 
     echo "$transcription_result" > attempt1_result.json
@@ -153,7 +161,7 @@ log_test "Attempt 2: Using simple language code"
 if transcription_result=$(curl -s --max-time 60 -X POST "http://${NIM_HOST}:${NIM_HTTP_PORT}/v1/audio/transcriptions" \
     -H "Content-Type: multipart/form-data" \
     -F "language=en" \
-    -F "file=@00000-00060.webm" \
+    -F "file=@${AUDIO_FILE}" \
     -F "response_format=json" 2>/dev/null); then
 
     echo "$transcription_result" > attempt2_result.json
@@ -185,7 +193,7 @@ echo ""
 # Test 3: Try with PCM WAV format (most compatible)
 log_test "Attempt 3: Converting to PCM WAV format first"
 echo "  Converting WebM to PCM WAV..."
-if ffmpeg -i 00000-00060.webm -ar 16000 -ac 1 -sample_fmt s16 test_audio.wav -y >/dev/null 2>&1; then
+if ffmpeg -i "${AUDIO_FILE}" -ar 16000 -ac 1 -sample_fmt s16 test_audio.wav -y >/dev/null 2>&1; then
     echo "  Conversion successful, testing with WAV file..."
     if transcription_result=$(curl -s --max-time 60 -X POST "http://${NIM_HOST}:${NIM_HTTP_PORT}/v1/audio/transcriptions" \
         -H "Content-Type: multipart/form-data" \
