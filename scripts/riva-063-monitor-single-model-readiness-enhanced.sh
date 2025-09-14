@@ -23,6 +23,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/riva-common-functions.sh"
 
+# Simple logging functions for compatibility
+log_info() { echo "   ℹ️  $1"; }
+log_error() { echo "   ❌ $1"; }
+log_success() { echo "   ✅ $1"; }
+log_warning() { echo "   ⚠️  $1"; }
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -50,14 +56,14 @@ main() {
 
     # Load configuration first
     load_and_validate_env || {
-        log_error "Failed to load .env configuration"
+        echo "❌ Failed to load .env configuration"
         exit 1
     }
 
-    log_info "Starting enhanced monitoring for $CONTAINER_NAME"
-    log_info "Maximum wait time: $MAX_WAIT_MINUTES minutes"
-    log_info "Poll interval: $POLL_INTERVAL seconds"
-    log_info "Health check port: $PORT (lessons learned: not 8000)"
+    echo "   ✅ Starting enhanced monitoring for $CONTAINER_NAME"
+    echo "   ⏱️  Maximum wait time: $MAX_WAIT_MINUTES minutes"
+    echo "   🔄 Poll interval: $POLL_INTERVAL seconds"
+    echo "   🏥 Health check port: $PORT (lessons learned: not 8000)"
 
     validate_monitoring_prerequisites
     
