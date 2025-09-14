@@ -2,3 +2,31 @@
 [2025-09-12 04:48:21] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
 [2025-09-12 04:48:21] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
 [2025-09-12 04:48:22] INFO [riva-062-deploy-nim-parakeet-tdt-0.6b-v2-T4-optimized.sh]: Validating enhanced prerequisites with lessons learned
+[2025-09-13 19:52:53] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-13 19:52:53] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-13 19:52:53] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Starting enhanced monitoring for nim-parakeet-tdt
+[2025-09-13 19:52:53] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Maximum wait time: 30 minutes
+[2025-09-13 19:52:53] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Poll interval: 30 seconds
+[2025-09-13 19:52:53] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Health check port: 9000 (lessons learned: not 8000)
+[2025-09-13 19:52:53] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Validating monitoring prerequisites
+[2025-09-13 19:52:53] ERROR [riva-063-monitor-single-model-readiness-enhanced.sh]: Container nim-parakeet-tdt not found
+[2025-09-14 01:58:33] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 01:58:33] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 01:58:33] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Starting enhanced monitoring for nim-parakeet-tdt
+[2025-09-14 01:58:33] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Maximum wait time: 30 minutes
+[2025-09-14 01:58:33] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Poll interval: 30 seconds
+[2025-09-14 01:58:33] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Health check port: 9000 (lessons learned: not 8000)
+[2025-09-14 01:58:33] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Validating monitoring prerequisites
+[2025-09-14 01:58:33] ERROR [riva-063-monitor-single-model-readiness-enhanced.sh]: Container nim-parakeet-tdt not found
+[2025-09-14 02:00:03] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 02:00:04] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 02:00:04] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Starting enhanced monitoring for parakeet-nim-s3-unified
+[2025-09-14 02:00:04] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Maximum wait time: 30 minutes
+[2025-09-14 02:00:04] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Poll interval: 30 seconds
+[2025-09-14 02:00:04] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Health check port: 9000 (lessons learned: not 8000)
+[2025-09-14 02:00:04] INFO [riva-063-monitor-single-model-readiness-enhanced.sh]: Validating monitoring prerequisites
+[2025-09-14 02:00:04] ERROR [riva-063-monitor-single-model-readiness-enhanced.sh]: Container parakeet-nim-s3-unified not found
+[2025-09-14 02:02:47] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 02:02:47] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 02:08:33] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
+[2025-09-14 02:08:33] INFO [riva-common-functions-enhanced.sh]: Initialized logging to /home/ubuntu/event-b/nvidia-parakeet-5/logs/riva-deployment.log
