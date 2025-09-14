@@ -75,8 +75,8 @@ export NGC_API_KEY="${NGC_API_KEY:-nvapi-OgyI8yXk5lBsnS0jCujdVJb3Y0IC8IBLFvckdIB
 export CONTAINER_ID=parakeet-0-6b-ctc-en-us
 export CONTAINER_TAG=latest
 
-# T4-safe profile: streaming mode, no diarizer (to minimize memory)
-export NIM_TAGS_SELECTOR='name=parakeet-0-6b-ctc-en-us,mode=str,diarizer=disabled,vad=default'
+# T4-safe profile: offline mode only, no diarizer (to minimize memory usage)
+export NIM_TAGS_SELECTOR='name=parakeet-0-6b-ctc-en-us,mode=ofl,diarizer=disabled,vad=default'
 
 # Ports
 export NIM_HTTP_API_PORT=9000
