@@ -101,10 +101,10 @@ log_info "Step 6: Launching T4-safe NIM container..."
 sudo docker run -d --name=${CONTAINER_ID} \
   --gpus all \
   --shm-size=8g \
-  -e NGC_API_KEY \
-  -e NIM_TAGS_SELECTOR \
-  -e NIM_HTTP_API_PORT \
-  -e NIM_GRPC_API_PORT \
+  -e NGC_API_KEY="${NGC_API_KEY}" \
+  -e NIM_TAGS_SELECTOR="${NIM_TAGS_SELECTOR}" \
+  -e NIM_HTTP_API_PORT="${NIM_HTTP_API_PORT}" \
+  -e NIM_GRPC_API_PORT="${NIM_GRPC_API_PORT}" \
   -e NIM_TRITON_LOG_VERBOSE=1 \
   -p ${NIM_HTTP_API_PORT}:${NIM_HTTP_API_PORT} \
   -p ${NIM_GRPC_API_PORT}:${NIM_GRPC_API_PORT} \
