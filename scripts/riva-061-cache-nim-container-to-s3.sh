@@ -28,7 +28,13 @@ print_script_header "061" "Cache NIM Container to S3" "One-time container downlo
 S3_BUCKET="${S3_BUCKET:-dbm-cf-2-web}"
 S3_PREFIX="${S3_PREFIX:-bintarball/nim-containers}"
 S3_REGION="${AWS_REGION:-us-east-2}"
-CONTAINER_IMAGE="${NIM_IMAGE:-nvcr.io/nim/nvidia/parakeet-ctc-1.1b-asr:1.0.0}"
+# H100 CONTAINER DISABLED - We only use T4 hardware
+# CONTAINER_IMAGE="${NIM_IMAGE:-nvcr.io/nim/nvidia/parakeet-ctc-1.1b-asr:1.0.0}"
+echo "❌ This script is configured for H100 containers which are incompatible with T4 hardware"
+echo "💡 Use T4-specific scripts instead:"
+echo "   • Export working T4 setup: ./scripts/NIM-direct-Nvidia-deployment-T4/005-export-working-nim-to-s3.sh"
+echo "   • Deploy from T4 S3 cache: ./scripts/riva-062-deploy-nim-from-s3-unified.sh"
+exit 1
 CONTAINER_NAME=$(echo "$CONTAINER_IMAGE" | sed 's/.*\///; s/:/-/')
 S3_PATH="s3://${S3_BUCKET}/${S3_PREFIX}/${CONTAINER_NAME}.tar"
 LOCAL_CACHE_DIR="${NIM_CACHE_DIR:-$HOME/nim-cache}"
