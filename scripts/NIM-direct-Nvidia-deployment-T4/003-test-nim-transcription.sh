@@ -131,6 +131,12 @@ if transcription_result=$(curl -s --max-time 60 -X POST "http://${NIM_HOST}:${NI
         else
             log_warning "Response received but no transcription text found:"
             echo "$transcription_result" | jq . 2>/dev/null | head -10 | sed 's/^/    /'
+
+            # Provide helpful explanations for common errors
+            if echo "$transcription_result" | grep -q "encoding not specified and could not detect encoding"; then
+                echo "    💡 Explanation: WebM format (Opus codec) is not supported by this NIM container"
+                echo "    🔧 Solution: Convert audio to 16kHz mono PCM WAV format"
+            fi
         fi
     else
         log_warning "Non-JSON response received:"
@@ -159,6 +165,12 @@ if transcription_result=$(curl -s --max-time 60 -X POST "http://${NIM_HOST}:${NI
         else
             log_warning "Response received but no transcription text found:"
             echo "$transcription_result" | jq . 2>/dev/null | head -10 | sed 's/^/    /'
+
+            # Provide helpful explanations for common errors
+            if echo "$transcription_result" | grep -q "Model not found for language"; then
+                echo "    💡 Explanation: Language code mismatch with deployed model"
+                echo "    🔧 Solution: Use 'en-US' instead of 'en' (matches parakeet-0-6b-ctc-en-us model)"
+            fi
         fi
     else
         log_warning "Non-JSON response received:"
@@ -195,8 +207,11 @@ if ffmpeg -i 00000-00060.webm -ar 16000 -ac 1 -sample_fmt s16 test_audio.wav -y 
         log_warning "Non-JSON response received:"
         echo "$transcription_result" | head -5 | sed 's/^/    /'
     fi
+    else
+        log_error "Request failed"
+    fi
 else
-    log_error "Request failed"
+    log_warning "ffmpeg conversion failed"
 fi
 
 echo ""
