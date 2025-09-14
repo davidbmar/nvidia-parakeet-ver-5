@@ -190,12 +190,23 @@ delete_selected_ips() {
     for ip in "${ips_to_delete[@]}"; do
         echo -n "  Removing $ip from all ports..."
         for port in "${PORTS[@]}"; do
+            # SPECIAL CASE: Handle 0.0.0.0/0 (anywhere) vs regular IPs
+            # The sed command earlier (line 89) only strips /32, but leaves /0 intact
+            # So 0.0.0.0/0 stays as "0.0.0.0/0" while 3.16.124.227/32 becomes "3.16.124.227"
+            # We need to handle both cases correctly for AWS deletion
+            if [ "$ip" = "0.0.0.0/0" ]; then
+                cidr="0.0.0.0/0"  # Keep "anywhere" CIDR as-is
+            else
+                cidr="${ip}/32"   # Regular single-host CIDR notation
+            fi
+
+            # Show the actual AWS command output so we can see if it succeeds or fails
             aws ec2 revoke-security-group-ingress \
                 --region "$AWS_REGION" \
                 --group-id "$SECURITY_GROUP_ID" \
                 --protocol tcp \
                 --port "$port" \
-                --cidr "${ip}/32" 2>/dev/null || true
+                --cidr "$cidr" || echo "  (rule may not exist for port $port)"
         done
         echo -e " ${GREEN}✓${NC}"
     done
