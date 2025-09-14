@@ -21,7 +21,7 @@ set -euo pipefail
 
 # Source enhanced common functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/riva-common-functions-enhanced.sh"
+source "$SCRIPT_DIR/riva-common-functions.sh"
 
 # =============================================================================
 # CONFIGURATION
@@ -29,7 +29,7 @@ source "$SCRIPT_DIR/riva-common-functions-enhanced.sh"
 
 SCRIPT_NUMBER="063"
 SCRIPT_TITLE="Enhanced Single Model Readiness Monitor"
-CONTAINER_NAME="${1:-nim-parakeet-tdt}"
+CONTAINER_NAME="${1:-parakeet-nim-s3-unified}"
 MAX_WAIT_MINUTES="${2:-30}"
 POLL_INTERVAL="${POLL_INTERVAL:-30}"
 PORT="${NIM_HTTP_PORT:-9000}"
@@ -47,12 +47,18 @@ PROGRESS_PHASE="initialization"
 
 main() {
     print_script_header "$SCRIPT_NUMBER" "$SCRIPT_TITLE" "Container: $CONTAINER_NAME, Port: $PORT"
-    
+
+    # Load configuration first
+    load_and_validate_env || {
+        log_error "Failed to load .env configuration"
+        exit 1
+    }
+
     log_info "Starting enhanced monitoring for $CONTAINER_NAME"
     log_info "Maximum wait time: $MAX_WAIT_MINUTES minutes"
     log_info "Poll interval: $POLL_INTERVAL seconds"
     log_info "Health check port: $PORT (lessons learned: not 8000)"
-    
+
     validate_monitoring_prerequisites
     
     local max_wait_seconds=$((MAX_WAIT_MINUTES * 60))
