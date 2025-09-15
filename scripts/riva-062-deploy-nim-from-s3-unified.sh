@@ -703,6 +703,7 @@ ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         --restart unless-stopped \\
         -e NGC_API_KEY='$NGC_API_KEY' \\
         -e NIM_CACHE_PATH=/opt/nim/.cache \\
+        -e NIM_TAGS_SELECTOR='name=parakeet-0-6b-ctc-en-us,mode=ofl,diarizer=disabled,vad=default' \\
         -v /opt/nim-cache:/opt/nim/.cache \\
         -p 8080:8080 \\
         -p 9000:9000 \\
