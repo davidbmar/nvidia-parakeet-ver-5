@@ -10,7 +10,7 @@ NIM_HOST="${NIM_HOST:-3.134.78.59}"
 NIM_PORT="${NIM_PORT:-9000}"
 
 # Audio file to test (easy to change)
-AUDIO_FILE="00120-00180.webm"
+AUDIO_FILE="00000-00060.webm"
 
 # Check if container is ready
 echo "Checking service health..."

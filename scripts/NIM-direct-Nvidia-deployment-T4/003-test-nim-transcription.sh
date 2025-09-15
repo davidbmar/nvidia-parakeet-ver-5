@@ -36,8 +36,8 @@ TEST_PREFIX="integration-test"
 TEMP_DIR="/tmp/nim-test-$(date +%s)"
 
 # Test files to download and test
-AUDIO_FILE="00060-00120.webm"
-TRANSCRIPT_FILE="transcript-00060-00120.json"  # Optional - may not exist
+AUDIO_FILE="00180-00240.webm"
+TRANSCRIPT_FILE="transcript-00180-00240.json"  # Optional - may not exist
 
 log_info "Step 1: Environment Setup"
 echo "  NIM Service: ${NIM_HOST}:${NIM_HTTP_PORT} (HTTP), ${NIM_HOST}:${NIM_GRPC_PORT} (gRPC)"
