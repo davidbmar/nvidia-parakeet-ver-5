@@ -71,14 +71,14 @@ print_step_header "1" "🔍 GPU Architecture Detection"
 
 echo "   📍 Connecting to GPU worker: $GPU_HOST"
 
-GPU_INFO=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} \
+GPU_INFO=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} \
     "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'No GPU detected'" 2>/dev/null || echo "Connection failed")
 
 if [[ "$GPU_INFO" == "Connection failed" ]]; then
     log_error "Cannot connect to GPU worker $GPU_HOST"
     echo "      Please ensure:"
     echo "         1. GPU instance is running"
-    echo "         2. SSH key is correct: ~/.ssh/dbm-sep-12-2025.pem"
+    echo "         2. SSH key is correct: ~/.ssh/${SSH_KEY_NAME}.pem"
     echo "         3. Security group allows SSH access"
     exit 1
 elif [[ "$GPU_INFO" == "No GPU detected" ]]; then
@@ -164,7 +164,7 @@ echo "      (Finding local resources can save significant deployment time)"
 echo ""
 
 echo "   🐳 Docker Images Found:"
-LOCAL_IMAGES=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} \
+LOCAL_IMAGES=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} \
     "docker images --format '{{.Repository}}:{{.Tag}}' | grep parakeet" 2>/dev/null || echo "")
 
 if [[ -n "$LOCAL_IMAGES" ]]; then
@@ -175,7 +175,7 @@ fi
 
 echo ""
 echo "   🧠 Cached Models Found:"
-LOCAL_MODELS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} \
+LOCAL_MODELS=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} \
     "find /opt/nim-cache -name '*.tar*' -o -name '*parakeet*' -o -name '*model*' -type f 2>/dev/null | head -5" 2>/dev/null || echo "")
 
 if [[ -n "$LOCAL_MODELS" ]]; then
@@ -587,7 +587,7 @@ print_step_header "8" "🛑 Pre-deployment Cleanup"
 # =============================================================================
 
 echo "   🧹 Stopping and removing existing NIM containers..."
-ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} "
+ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
     # Stop and remove containers by name pattern
     docker stop \$(docker ps -q --filter name=parakeet) 2>/dev/null || true
     docker rm \$(docker ps -aq --filter name=parakeet) 2>/dev/null || true
@@ -610,7 +610,7 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
     CONTAINER_FILENAME=$(basename "$SELECTED_CONTAINER_PATH")
     echo "   📦 Downloading container: $CONTAINER_FILENAME"
 
-    ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} "
+    ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         mkdir -p /tmp/nim-deploy
         cd /tmp/nim-deploy
 
@@ -641,7 +641,7 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
     MODEL_FILENAME=$(basename "$SELECTED_MODEL_PATH")
     echo "   📦 Downloading model: $MODEL_FILENAME"
 
-    ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} "
+    ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         mkdir -p /tmp/nim-models
         cd /tmp/nim-models
 
@@ -685,7 +685,7 @@ NGC_API_KEY=$(grep 'NGC_API_KEY=' .env | cut -d'=' -f2)
 
 echo "   🐳 Starting NIM container with optimized configuration..."
 
-ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} "
+ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
     # Get the loaded image name
     IMAGE_NAME=\$(docker images --format 'table {{.Repository}}:{{.Tag}}' | grep parakeet | head -1)
     echo '   🎯 Using image: '\$IMAGE_NAME
@@ -706,7 +706,7 @@ ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} "
 
 # Container startup verification
 sleep 5
-CONTAINER_STATUS=$(ssh -i ~/.ssh/dbm-sep-12-2025.pem ubuntu@${GPU_HOST} \
+CONTAINER_STATUS=$(ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} \
     "docker ps --filter name=$CONTAINER_NAME --format '{{.Status}}' | head -1")
 
 if [[ -n "$CONTAINER_STATUS" ]]; then
