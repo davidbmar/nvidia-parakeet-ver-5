@@ -138,7 +138,48 @@ NGCEOF
 
 echo "   ✅ NGC configured on GPU instance"
 
-print_step_header "3" "Docker Registry Login"
+print_step_header "3" "Install AWS CLI on GPU Instance"
+
+echo "   📦 Installing AWS CLI for S3 cache access..."
+
+run_remote "
+    # Check if AWS CLI is already installed
+    if command -v aws >/dev/null 2>&1; then
+        echo '✅ AWS CLI already installed: '\$(aws --version)
+    else
+        echo '📥 Installing AWS CLI...'
+
+        # Update package manager
+        sudo apt-get update -y
+
+        # Install AWS CLI v2
+        curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o awscliv2.zip
+        sudo apt-get install -y unzip
+        unzip awscliv2.zip
+        sudo ./aws/install
+
+        # Clean up
+        rm -rf aws awscliv2.zip
+
+        echo '✅ AWS CLI installed: '\$(aws --version)
+    fi
+
+    # Configure AWS CLI to use instance IAM role (no credentials needed)
+    aws configure set region us-east-2
+    aws configure set output json
+
+    # Test S3 access
+    echo '🔍 Testing S3 access...'
+    if aws s3 ls s3://dbm-cf-2-web/bintarball/ >/dev/null 2>&1; then
+        echo '✅ S3 access verified'
+    else
+        echo '⚠️  S3 access test failed - may need IAM role configuration'
+    fi
+"
+
+echo "   ✅ AWS CLI configured on GPU instance"
+
+print_step_header "4" "Docker Registry Login"
 
 echo "   🔐 Logging into NVIDIA Container Registry (nvcr.io)..."
 
@@ -151,7 +192,7 @@ run_remote "
 
 echo "   ✅ Docker registry access configured"
 
-print_step_header "4" "Verify NIM Access"
+print_step_header "5" "Verify NIM Access"
 
 echo "   🔍 Testing NIM container access..."
 
