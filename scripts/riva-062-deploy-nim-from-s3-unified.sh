@@ -615,11 +615,17 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
         cd /tmp/nim-deploy
 
         echo '   📥 Downloading from S3...'
-        if aws s3 cp '$SELECTED_CONTAINER_PATH' ./container.tar.gz; then
+        CONTAINER_FILE=\$(basename '$SELECTED_CONTAINER_PATH')
+        if aws s3 cp '$SELECTED_CONTAINER_PATH' ./\$CONTAINER_FILE; then
             echo '   🐳 Loading into Docker...'
-            if docker load < container.tar.gz; then
+            if [[ \"\$CONTAINER_FILE\" == *.tar.gz ]]; then
+                echo '   📦 Extracting compressed container...'
+                gunzip \$CONTAINER_FILE
+                CONTAINER_FILE=\${CONTAINER_FILE%.gz}
+            fi
+            if docker load < \$CONTAINER_FILE; then
                 echo '   🧹 Cleaning up temporary files...'
-                rm -f container.tar.gz
+                rm -f \$CONTAINER_FILE
                 echo '   ✅ Container deployment successful'
             else
                 echo '   ❌ Failed to load container into Docker'
