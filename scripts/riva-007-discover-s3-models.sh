@@ -26,6 +26,10 @@ log_error() { echo "❌ $1"; }
 update_env_value() {
     local key="$1"
     local value="$2"
+    # Quote value if it contains spaces
+    if [[ "$value" =~ [[:space:]] ]]; then
+        value="\"$value\""
+    fi
     if grep -q "^${key}=" .env; then
         sed -i "s|^${key}=.*|${key}=${value}|" .env
     else
