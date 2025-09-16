@@ -44,7 +44,7 @@ class RivaConfig:
     api_key: Optional[str] = os.getenv("RIVA_API_KEY")
     
     # Model settings
-    model: str = os.getenv("RIVA_MODEL", "parakeet-0-6b-ctc-riva:fp8-ofl-rmir-25.08.3")
+    model: str = os.getenv("RIVA_MODEL", "")
     language_code: str = os.getenv("RIVA_LANGUAGE_CODE", "en-US")
     enable_punctuation: bool = os.getenv("RIVA_ENABLE_AUTOMATIC_PUNCTUATION", "true").lower() == "true"
     enable_word_offsets: bool = os.getenv("RIVA_ENABLE_WORD_TIME_OFFSETS", "true").lower() == "true"
