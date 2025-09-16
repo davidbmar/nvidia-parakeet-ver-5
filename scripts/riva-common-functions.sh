@@ -257,38 +257,54 @@ check_riva_health() {
 update_env_status() {
     local key=$1
     local value=$2
-    
+
     if [[ ! -f .env ]]; then
         echo "❌ .env file not found"
         return 1
     fi
-    
-    if grep -q "^${key}=" .env; then
-        sed -i "s|^${key}=.*|${key}=${value}|" .env
+
+    # Status values typically don't need quotes, but handle empty values safely
+    local safe_value
+    if [[ -z "$value" ]]; then
+        safe_value='""'
     else
-        echo "${key}=${value}" >> .env
+        safe_value="$value"
     fi
-    
-    echo "📝 Updated .env: ${key}=${value}"
+
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${safe_value}|" .env
+    else
+        echo "${key}=${safe_value}" >> .env
+    fi
+
+    echo "📝 Updated .env: ${key}=${safe_value}"
 }
 
 # Update or append environment variable
 update_or_append_env() {
     local key=$1
     local value=$2
-    
+
     if [[ ! -f .env ]]; then
         echo "❌ .env file not found"
         return 1
     fi
-    
-    if grep -q "^${key}=" .env; then
-        sed -i "s|^${key}=.*|${key}=${value}|" .env
+
+    # Handle quoting properly - always quote the value to handle empty strings
+    local quoted_value
+    if [[ -z "$value" ]]; then
+        quoted_value='""'
     else
-        echo "${key}=${value}" >> .env
+        quoted_value="\"$value\""
     fi
-    
-    echo "📝 Updated .env: ${key}=${value}"
+
+    if grep -q "^${key}=" .env; then
+        sed -i "s|^${key}=.*|${key}=${quoted_value}|" .env
+    else
+        echo "${key}=${quoted_value}" >> .env
+    fi
+
+    echo "📝 Updated .env: ${key}=${quoted_value}"
 }
 
 # Check if prerequisite step passed
