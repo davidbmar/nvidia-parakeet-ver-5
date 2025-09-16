@@ -609,14 +609,18 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
 
     CONTAINER_FILENAME=$(basename "$SELECTED_CONTAINER_PATH")
     echo "   📦 Downloading container: $CONTAINER_FILENAME"
+    echo "   📏 Size: $SELECTED_CONTAINER_SIZE"
+    echo "   ⏱️  Estimated time: 2-4 minutes (within AWS region)"
 
     ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         mkdir -p /tmp/nim-deploy
         cd /tmp/nim-deploy
 
         echo '   📥 Downloading from S3...'
+        echo '   🕐 Started at: '\$(date '+%H:%M:%S')
         CONTAINER_FILE=\$(basename '$SELECTED_CONTAINER_PATH')
-        if aws s3 cp '$SELECTED_CONTAINER_PATH' ./\$CONTAINER_FILE --region us-east-2; then
+        echo '   📊 Progress will be shown below:'
+        if aws s3 cp '$SELECTED_CONTAINER_PATH' ./\$CONTAINER_FILE --region us-east-2 --cli-read-timeout 0 --cli-write-timeout 0; then
             echo '   🐳 Loading into Docker...'
             if [[ \"\$CONTAINER_FILE\" == *.tar.gz ]]; then
                 echo '   📦 Extracting compressed container...'
@@ -646,13 +650,17 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
 
     MODEL_FILENAME=$(basename "$SELECTED_MODEL_PATH")
     echo "   📦 Downloading model: $MODEL_FILENAME"
+    echo "   📏 Size: $SELECTED_MODEL_SIZE"
+    echo "   ⏱️  Estimated time: 1-2 minutes (within AWS region)"
 
     ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         mkdir -p /tmp/nim-models
         cd /tmp/nim-models
 
         echo '   📥 Downloading model cache from S3...'
-        if aws s3 cp '$SELECTED_MODEL_PATH' ./model-cache.tar.gz --region us-east-2; then
+        echo '   🕐 Started at: '\$(date '+%H:%M:%S')
+        echo '   📊 Progress will be shown below:'
+        if aws s3 cp '$SELECTED_MODEL_PATH' ./model-cache.tar.gz --region us-east-2 --cli-read-timeout 0 --cli-write-timeout 0; then
             echo '   📂 Extracting model cache...'
             if tar -xzf model-cache.tar.gz; then
                 echo '   🔧 Installing model cache...'
