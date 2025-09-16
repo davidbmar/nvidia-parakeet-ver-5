@@ -296,7 +296,8 @@ echo ""
 echo "💾 Files saved in: ${TEMP_DIR}"
 echo "==================================================================="
 
-# Update .env with success flag
+# Update .env with success flag (from original directory)
+cd "$SCRIPT_DIR/.."
 update_or_append_env "NIM_TRANSCRIPTION_TESTED" "true"
 update_or_append_env "NIM_TRANSCRIPTION_TEST_TIMESTAMP" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
