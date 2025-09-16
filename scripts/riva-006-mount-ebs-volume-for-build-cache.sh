@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# RIVA-005: Mount EBS Volume for Build Cache
+# RIVA-006: Mount EBS Volume for Build Cache
 # Creates and mounts a 100GB EBS volume for container caching operations
 # Solves disk space issues when caching large NIM containers to S3
 #
@@ -22,11 +22,12 @@ fi
 source "${SCRIPT_DIR}/riva-common-functions.sh"
 
 # Script initialization
-print_script_header "005" "Mount EBS Volume for Build Cache" "100GB storage expansion for container operations"
+print_script_header "006" "Mount EBS Volume for Build Cache" "100GB storage expansion for container operations"
 
 # Configuration
 VOLUME_SIZE="${EBS_CACHE_VOLUME_SIZE:-100}"
-DEVICE_NAME="/dev/nvme1n1"
+ATTACH_DEVICE="/dev/sdf"  # AWS API device name for attachment
+DEVICE_NAME="/dev/nvme1n1"  # Actual NVMe device that will appear
 MOUNT_POINT="/mnt/cache"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 
@@ -34,7 +35,8 @@ print_step_header "1" "Check Prerequisites"
 
 echo "   📋 Configuration:"
 echo "      • Volume Size: ${VOLUME_SIZE}GB"
-echo "      • Device: ${DEVICE_NAME}"
+echo "      • Attach Device: ${ATTACH_DEVICE} (AWS API)"
+echo "      • Device Name: ${DEVICE_NAME} (NVMe)"
 echo "      • Mount Point: ${MOUNT_POINT}"
 echo "      • AWS Region: ${AWS_REGION}"
 
@@ -56,7 +58,7 @@ echo "   🔍 Checking for existing EBS volume..."
 EXISTING_VOLUME=$(aws ec2 describe-volumes \
     --region "$AWS_REGION" \
     --filters "Name=attachment.instance-id,Values=$INSTANCE_ID" \
-              "Name=attachment.device,Values=$DEVICE_NAME" \
+              "Name=attachment.device,Values=$ATTACH_DEVICE" \
     --query 'Volumes[0].VolumeId' \
     --output text 2>/dev/null || echo "None")
 
@@ -90,7 +92,7 @@ else
         --region "$AWS_REGION" \
         --volume-id "$VOLUME_ID" \
         --instance-id "$INSTANCE_ID" \
-        --device "$DEVICE_NAME"
+        --device "$ATTACH_DEVICE"
     
     # Wait for attachment
     echo "   ⏳ Waiting for volume attachment..."
