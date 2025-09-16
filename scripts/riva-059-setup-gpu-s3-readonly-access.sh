@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# RIVA-061: Setup GPU S3 Read-Only Access
+# RIVA-059: Setup GPU S3 Read-Only Access
 # Creates IAM role with least-privilege S3 access for GPU instances
 # Enables secure S3 downloads without copying AWS credentials
 #
@@ -22,7 +22,7 @@ fi
 source "${SCRIPT_DIR}/riva-common-functions.sh"
 
 # Script initialization
-print_script_header "061" "Setup GPU S3 Read-Only Access" "Least-privilege S3 access for secure NIM deployments"
+print_script_header "059" "Setup GPU S3 Read-Only Access" "Least-privilege S3 access for secure NIM deployments"
 
 # Configuration
 ROLE_NAME="riva-gpu-role"
