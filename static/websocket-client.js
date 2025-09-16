@@ -14,10 +14,10 @@ class TranscriptionWebSocket {
         let wsProtocol, wsPort;
         if (protocol === 'https:') {
             wsProtocol = 'wss:';  // Use WSS for HTTPS pages
-            wsPort = '8444';      // Use our WebSocket server port
+            wsPort = '8443';      // Use our WebSocket server port
         } else {
             wsProtocol = 'ws:';
-            wsPort = port || '8444';
+            wsPort = port || '8443';
         }
         
         // Always include the WebSocket port since we're using a custom port
