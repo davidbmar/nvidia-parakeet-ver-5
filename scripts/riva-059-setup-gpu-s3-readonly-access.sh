@@ -31,6 +31,7 @@ POLICY_NAME="riva-gpu-policy"
 S3_BUCKET="${NIM_S3_CACHE_BUCKET:-dbm-cf-2-web}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
 GPU_INSTANCE_ID="${GPU_INSTANCE_ID:-}"
+GPU_HOST="${RIVA_HOST:-${GPU_INSTANCE_IP:-}}"
 
 print_step_header "1" "Validate Prerequisites"
 
@@ -38,6 +39,7 @@ echo "   📋 Configuration:"
 echo "      • S3 Bucket: ${S3_BUCKET}"
 echo "      • AWS Region: ${AWS_REGION}"
 echo "      • GPU Instance: ${GPU_INSTANCE_ID}"
+echo "      • GPU Host: ${GPU_HOST}"
 echo "      • Role Name: ${ROLE_NAME}"
 
 # Check AWS credentials
@@ -219,12 +221,16 @@ if [[ -n "$GPU_INSTANCE_ID" ]]; then
 
     print_step_header "7" "Test S3 Access"
 
-    echo "   🧪 Testing S3 access from GPU instance..."
-    echo "   ⏳ Waiting for IAM changes to propagate (30 seconds)..."
-    sleep 30
+    if [[ -z "$GPU_HOST" ]]; then
+        echo "   ⚠️  GPU host not configured - skipping S3 access test"
+        echo "   💡 S3 access can be tested manually once GPU instance is available"
+    else
+        echo "   🧪 Testing S3 access from GPU instance..."
+        echo "   ⏳ Waiting for IAM changes to propagate (30 seconds)..."
+        sleep 30
 
-    # Test S3 access
-    if ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
+        # Test S3 access
+        if ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
         echo 'Testing S3 access...'
         if aws s3 ls s3://${S3_BUCKET}/bintarball/nim-containers/ --region ${AWS_REGION} | head -3; then
             echo '✅ S3 access working!'
@@ -237,6 +243,7 @@ if [[ -n "$GPU_INSTANCE_ID" ]]; then
     else
         echo "   ⚠️  S3 access test failed - IAM changes may need more time to propagate"
         echo "   💡 Try running the deployment script in a few minutes"
+    fi
     fi
 else
     echo ""
