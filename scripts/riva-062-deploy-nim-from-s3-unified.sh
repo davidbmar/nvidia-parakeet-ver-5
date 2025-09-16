@@ -610,55 +610,35 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
     CONTAINER_FILENAME=$(basename "$SELECTED_CONTAINER_PATH")
     echo "   📦 Downloading container: $CONTAINER_FILENAME"
 
-    # Download from S3 locally (this node has AWS credentials)
-    echo "   📥 Downloading from S3 to local machine..."
-    mkdir -p /tmp/nim-deploy-local
-    cd /tmp/nim-deploy-local
+    ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
+        mkdir -p /tmp/nim-deploy
+        cd /tmp/nim-deploy
 
-    if aws s3 cp "$SELECTED_CONTAINER_PATH" ./"$CONTAINER_FILENAME" --region us-east-2; then
-        echo "   ✅ Downloaded successfully: $CONTAINER_FILENAME"
-
-        # Transfer to GPU instance
-        echo "   🚀 Transferring to GPU instance..."
-        if scp -i ~/.ssh/${SSH_KEY_NAME}.pem "./$CONTAINER_FILENAME" ubuntu@${GPU_HOST}:/tmp/nim-deploy-container.tmp; then
-            echo "   ✅ Transfer completed"
-
-            # Load container on GPU instance
-            ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
-                cd /tmp
-                echo '   🐳 Loading into Docker...'
-                if [[ '$CONTAINER_FILENAME' == *.tar.gz ]]; then
-                    echo '   📦 Extracting compressed container...'
-                    gunzip nim-deploy-container.tmp
-                    CONTAINER_FILE='nim-deploy-container'
-                else
-                    CONTAINER_FILE='nim-deploy-container.tmp'
-                fi
-
-                if docker load < \$CONTAINER_FILE; then
-                    echo '   🧹 Cleaning up temporary files...'
-                    rm -f nim-deploy-container* 2>/dev/null || true
-                    echo '   ✅ Container deployment successful'
-                else
-                    echo '   ❌ Failed to load container into Docker'
-                    exit 1
-                fi
-            " || {
-                echo "   ❌ Failed to load container on GPU instance"
+        echo '   📥 Downloading from S3...'
+        CONTAINER_FILE=\$(basename '$SELECTED_CONTAINER_PATH')
+        if aws s3 cp '$SELECTED_CONTAINER_PATH' ./\$CONTAINER_FILE --region us-east-2; then
+            echo '   🐳 Loading into Docker...'
+            if [[ \"\$CONTAINER_FILE\" == *.tar.gz ]]; then
+                echo '   📦 Extracting compressed container...'
+                gunzip \$CONTAINER_FILE
+                CONTAINER_FILE=\${CONTAINER_FILE%.gz}
+            fi
+            if docker load < \$CONTAINER_FILE; then
+                echo '   🧹 Cleaning up temporary files...'
+                rm -f \$CONTAINER_FILE
+                echo '   ✅ Container deployment successful'
+            else
+                echo '   ❌ Failed to load container into Docker'
                 exit 1
-            }
+            fi
         else
-            echo "   ❌ Failed to transfer container to GPU instance"
+            echo '   ❌ Failed to download container from S3'
             exit 1
         fi
-
-        # Clean up local files
-        cd ..
-        rm -rf /tmp/nim-deploy-local
-    else
-        echo "   ❌ Failed to download container from S3"
+    " || {
+        log_error "Container deployment failed"
         exit 1
-    fi
+    }
 
     echo "   ✅ Container deployed from S3"
 
@@ -667,56 +647,37 @@ if [[ "$USE_LOCAL_RESOURCES" != true ]]; then
     MODEL_FILENAME=$(basename "$SELECTED_MODEL_PATH")
     echo "   📦 Downloading model: $MODEL_FILENAME"
 
-    # Download from S3 locally (this node has AWS credentials)
-    echo "   📥 Downloading model cache from S3 to local machine..."
-    mkdir -p /tmp/nim-models-local
-    cd /tmp/nim-models-local
+    ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
+        mkdir -p /tmp/nim-models
+        cd /tmp/nim-models
 
-    if aws s3 cp "$SELECTED_MODEL_PATH" ./model-cache.tar.gz --region us-east-2; then
-        echo "   ✅ Downloaded successfully: $MODEL_FILENAME"
-
-        # Transfer to GPU instance
-        echo "   🚀 Transferring model cache to GPU instance..."
-        if scp -i ~/.ssh/${SSH_KEY_NAME}.pem ./model-cache.tar.gz ubuntu@${GPU_HOST}:/tmp/nim-model-cache.tar.gz; then
-            echo "   ✅ Transfer completed"
-
-            # Install model cache on GPU instance
-            ssh -i ~/.ssh/${SSH_KEY_NAME}.pem ubuntu@${GPU_HOST} "
-                cd /tmp
-                echo '   📂 Extracting model cache...'
-                if tar -xzf nim-model-cache.tar.gz; then
-                    echo '   🔧 Installing model cache...'
-                    sudo mkdir -p /opt/nim-cache
-                    if sudo cp -r ngc/* /opt/nim-cache/ 2>/dev/null || sudo cp -r * /opt/nim-cache/; then
-                        sudo chown -R 1000:1000 /opt/nim-cache 2>/dev/null || sudo chown -R ubuntu:ubuntu /opt/nim-cache
-                        echo '   🧹 Cleaning up temporary files...'
-                        rm -f nim-model-cache.tar.gz
-                        rm -rf ngc/ 2>/dev/null || true
-                        echo '   ✅ Model deployment successful'
-                    else
-                        echo '   ❌ Failed to install model cache'
-                        exit 1
-                    fi
+        echo '   📥 Downloading model cache from S3...'
+        if aws s3 cp '$SELECTED_MODEL_PATH' ./model-cache.tar.gz --region us-east-2; then
+            echo '   📂 Extracting model cache...'
+            if tar -xzf model-cache.tar.gz; then
+                echo '   🔧 Installing model cache...'
+                sudo mkdir -p /opt/nim-cache
+                if sudo cp -r ngc/* /opt/nim-cache/ 2>/dev/null || sudo cp -r * /opt/nim-cache/; then
+                    sudo chown -R 1000:1000 /opt/nim-cache 2>/dev/null || sudo chown -R ubuntu:ubuntu /opt/nim-cache
+                    echo '   🧹 Cleaning up temporary files...'
+                    rm -f model-cache.tar.gz
+                    echo '   ✅ Model deployment successful'
                 else
-                    echo '   ❌ Failed to extract model cache'
+                    echo '   ❌ Failed to install model cache'
                     exit 1
                 fi
-            " || {
-                echo "   ❌ Failed to install model cache on GPU instance"
+            else
+                echo '   ❌ Failed to extract model cache'
                 exit 1
-            }
+            fi
         else
-            echo "   ❌ Failed to transfer model cache to GPU instance"
+            echo '   ❌ Failed to download model from S3'
             exit 1
         fi
-
-        # Clean up local files
-        cd ..
-        rm -rf /tmp/nim-models-local
-    else
-        echo "   ❌ Failed to download model from S3"
+    " || {
+        log_error "Model deployment failed"
         exit 1
-    fi
+    }
 
     echo "   ✅ Model deployed from S3"
 fi
