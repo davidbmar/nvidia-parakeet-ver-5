@@ -63,7 +63,11 @@ class TranscriptionUI {
             words: transcription.words || [],
             timestamp: transcription.timestamp || new Date().toISOString(),
             isFinal: transcription.is_final !== false,
-            confidence: transcription.confidence || 0.95,
+            confidence: transcription.confidence || (
+                transcription.words && transcription.words.length > 0
+                    ? transcription.words.reduce((sum, w) => sum + (w.confidence || 0), 0) / transcription.words.length
+                    : 0.85
+            ),
             duration: transcription.duration || 0,
             processingTime: transcription.processing_time_ms || 0
         };
