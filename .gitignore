@@ -1,0 +1,101 @@
+# Production RNN-T Deployment - Git Ignore
+
+# Environment and secrets
+.env
+
+# SSH Keys
+*.pem
+*.key
+id_rsa*
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Models and cache
+models/
+pretrained_models/
+*.pkl
+*.pt
+*.pth
+*.ckpt
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+.tmp/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+test-output/
+*.test
+coverage.xml
+*.cover
+.coverage
+.pytest_cache/
+
+# AWS
+.aws/
+aws-credentials
+credentials
+
+# Terraform (if used)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Other sensitive files
+secrets.json
+config.json
+private/
