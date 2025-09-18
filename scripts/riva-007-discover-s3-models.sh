@@ -1,10 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Script: riva-006-discover-s3-models.sh
-# Purpose: Discover available NIM models in S3 and configure deployment options
+# Script: riva-007-discover-s3-models.sh
+# Purpose: Discover NIM containers and RIVA models in S3, choose deployment approach
 # Prerequisites: AWS credentials configured, S3 bucket access
-# Validation: Models discovered and .env updated with compatible configurations
+# Validation: Deployment approach chosen and .env updated with compatible configurations
 
 # Load .env configuration
 if [[ -f .env ]]; then
@@ -41,13 +41,14 @@ update_env_value() {
 # Configuration
 # =============================================================================
 S3_BUCKET="${NIM_S3_CACHE_BUCKET:-dbm-cf-2-web}"
-S3_MODELS_PREFIX="bintarball/nim-models"
-S3_CONTAINERS_PREFIX="bintarball/nim-containers"
+S3_NIM_CONTAINERS_PREFIX="bintarball/nim-containers"
+S3_RIVA_CONTAINERS_PREFIX="bintarball/riva"
+S3_RIVA_MODELS_PREFIX="bintarball/models"
 
-log_info "🔍 RIVA-007: S3 Model Discovery & Configuration"
+log_info "🔍 RIVA-007: S3 Deployment Strategy Discovery"
 echo "============================================================"
-echo "Purpose: Discover S3-cached models and configure deployment"
-echo "S3 Bucket: s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/"
+echo "Purpose: Choose between NIM and Traditional RIVA deployment"
+echo "S3 Bucket: s3://${S3_BUCKET}/"
 echo "Timestamp: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
 echo ""
 
@@ -55,137 +56,89 @@ echo ""
 # Script Information & Features
 # =============================================================================
 cat << 'EOF'
-🎉 S3 Model Discovery Script - Comprehensive Model Marketplace
+🎉 S3 Deployment Strategy Discovery - NIM vs Traditional RIVA
 
-🔍 KEY FEATURES:
-═══════════════
+🔍 DEPLOYMENT APPROACH SELECTION:
+══════════════════════════════════
 
-1. Hardware Detection
-   • Auto-detects GPU type (T4, V100, A100, H100)
-   • Measures GPU memory and instance type
-   • Filters compatible models automatically
+This script helps you choose between two different ASR deployment approaches:
 
-2. S3 Model Discovery
-   • Scans S3 bucket for cached models
-   • Extracts metadata (size, type, capabilities)
-   • Classifies models: streaming, offline, enhancement
-   • Shows compatibility with current hardware
+🚀 APPROACH 1: NIM (NVIDIA Inference Microservice)
+═══════════════════════════════════════════════════
+   • Self-contained containers with model built-in
+   • Run directly with docker run - no separate model loading
+   • Modern, cloud-native architecture
+   • Easier deployment and scaling
 
-3. Architecture Recommendations
-   • Analyzes available model combinations
-   • Recommends optimal deployment strategies
-   • Suggests single-model vs two-pass architectures
+📦 Available NIM Containers:
+   • parakeet-0-6b-ctc-en-us-latest.tar.gz (10.3GB) - Streaming ASR
+   • parakeet-tdt-0.6b-v2-1.0.0.tar.gz (11.0GB) - Offline ASR
+   • parakeet-ctc-1.1b-asr-1.0.0.tar (13.3GB) - Large model
 
-4. Interactive Configuration
-   • Guided model selection process
-   • Multiple deployment strategy options
-   • Automatic .env file updates
-
-5. .env Integration
-   • Adds comprehensive model configuration
-   • Sets deployment flags and paths
-   • Preserves existing configuration
-
-📊 AVAILABLE MODEL TYPES:
-═════════════════════════
-
-🚀 Streaming Models (Real-time)
-   • parakeet-0-6b-ctc-riva-t4-cache.tar.gz (4.4GB)
-   • CTC architecture for low-latency transcription
-   • Perfect for live applications and WebSocket streaming
-
-🎯 Offline Models (High-accuracy)
-   • parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz (897MB)
-   • TDT architecture for batch processing
-   • Higher accuracy for final transcripts
-
-✨ Enhancement Models (Post-processing)
-   • punctuation-riva-t4-cache.tar.gz (385MB)
-   • Adds punctuation and formatting
-   • Improves readability of transcripts
-
-🏗 ARCHITECTURE OPTIONS:
-════════════════════════
-
-⚡ Streaming-Only Architecture:
-   • Real-time transcription only
-   • Lower accuracy but immediate results
-   • Good for live applications
-
-🎯 Batch-Only Architecture:
-   • High-accuracy transcription only
-   • No real-time capabilities
-   • Good for file processing workflows
-
-🌟 Two-Pass Hybrid Architecture (RECOMMENDED):
-   • Real-time streaming + high-accuracy batch
-   • Best user experience and accuracy
-   • Optimal for production workloads
-   • Pass 1: CTC streaming for immediate feedback
-   • Pass 2: TDT offline for final accurate results
-
-🚀 PERFORMANCE GAINS:
-═════════════════════
-
-• Container Loading: 10x faster (2-3 min vs 15-20 min)
-• Model Loading: 20x faster (30 sec vs 10+ min)
-• Total Deployment: Under 3 minutes vs 30+ minutes
-• Cost Benefits: Eliminates repeated NGC downloads
-
-💰 COST BENEFITS:
-═════════════════
-
-• Reduces deployment time by 90%
-• Enables rapid scaling and testing
-• T4 GPU-optimized for cost efficiency
-• Eliminates bandwidth costs for repeated downloads
-
-📋 S3 ORGANIZED CACHE STRUCTURE:
+🏗 APPROACH 2: Traditional RIVA
 ════════════════════════════════
+   • RIVA server container + separate model files
+   • More traditional architecture with model loading
+   • Greater flexibility for model swapping
+   • Compatible with existing RIVA workflows
 
-s3://dbm-cf-2-web/bintarball/
-├── nim-containers/
-│   ├── t4-containers/                    # T4 GPU optimized
-│   │   ├── parakeet-0-6b-ctc-en-us-latest.tar.gz          # 21.9GB - CTC Streaming
-│   │   └── parakeet-tdt-0.6b-v2-1.0.0.tar.gz              # 39.8GB - TDT Offline
-│   ├── h100-containers/                  # H100 GPU optimized  
-│   │   └── parakeet-ctc-1.1b-asr-1.0.0.tar                # 13.34GB
-│   └── metadata/
-│       └── container-gpu-mapping.json    # Compatibility matrix
-├── nim-models/
-│   ├── t4-models/                        # T4 model caches
-│   │   ├── parakeet-0-6b-ctc-riva-t4-cache.tar.gz         # 4.4GB
-│   │   ├── parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz   # 897MB
-│   │   └── punctuation-riva-t4-cache.tar.gz               # 385MB
-│   └── metadata/
-│       └── deployment-templates/         # Pre-configured setups
-│           ├── t4-streaming-only.env
-│           ├── t4-two-pass.env
-│           └── h100-production.env
+📦 Available RIVA Components:
+   Server: riva-speech-2.19.0.tar.gz (20GB)
+   Models:
+   • Conformer-CTC-L_spe1024_ml_cs_es-en-US_1.1.riva (347MB)
+   • Conformer-CTC-XL_spe-128_en-US_Riva-ASR-SET-4.0.riva (1.5GB)
 
-📋 GENERATED .env VARIABLES:
+🔄 KEY DIFFERENCES:
+═══════════════════
+
+NIM APPROACH:
+✅ Faster startup (no model loading wait)
+✅ Simpler deployment (single container)
+✅ Cloud-native architecture
+❌ Less model flexibility
+❌ Larger container sizes
+
+RIVA APPROACH:
+✅ Model flexibility (swap models easily)
+✅ Smaller individual components
+✅ Traditional RIVA API compatibility
+❌ Slower startup (model loading required)
+❌ More complex deployment
+
+📋 REORGANIZED S3 STRUCTURE:
 ════════════════════════════
 
-NIM_DEPLOYMENT_MODE=two_pass
-NIM_GPU_TYPE_DETECTED=t4
-NIM_S3_MODEL_PRIMARY=parakeet-0-6b-ctc-riva-t4-cache.tar.gz
-NIM_S3_MODEL_SECONDARY=parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz
-NIM_S3_MODEL_ENHANCEMENT=punctuation-riva-t4-cache.tar.gz
-NIM_ENABLE_REAL_TIME=true
-NIM_ENABLE_BATCH=true
-NIM_ENABLE_TWO_PASS=true
+s3://dbm-cf-2-web/bintarball/
+├── nim-containers/                       # NIM: Self-contained containers
+│   ├── t4-containers/
+│   │   ├── parakeet-0-6b-ctc-en-us-latest.tar.gz      # 10.3GB
+│   │   ├── parakeet-tdt-0.6b-v2-1.0.0.tar.gz          # 11.0GB
+│   │   └── parakeet-ctc-1.1b-asr-1.0.0.tar            # 13.3GB
+│   └── metadata/
+├── riva/                                 # RIVA: Server containers
+│   └── riva-speech-2.19.0.tar.gz                      # 20GB
+└── models/                               # RIVA: Model files
+    ├── Conformer-CTC-L_spe1024_ml_cs_es-en-US_1.1.riva    # 347MB
+    └── Conformer-CTC-XL_spe-128_en-US_Riva-ASR-SET-4.0.riva # 1.5GB
+
+🎯 DEPLOYMENT STRATEGY DECISIONS:
+═════════════════════════════════
+
+1. Choose deployment approach (NIM vs RIVA)
+2. Select specific containers/models for your GPU type
+3. Configure .env for chosen approach
+4. Proceed with deployment scripts
 
 📍 INTEGRATION FLOW:
 ═══════════════════
 
 1. Run after: riva-005-mount-ebs-volume.sh
-2. Discovers: Available S3 cached models
-3. Configures: Optimal deployment strategy
-4. Updates: .env with model paths and settings
-5. Feeds into: riva-062-deploy-nim-from-s3.sh
-
-This script becomes your "model marketplace" that automatically configures
-optimal deployments based on your hardware and available S3 models!
+2. Discovers: Available S3 containers and models
+3. Chooses: NIM or RIVA deployment approach
+4. Updates: .env with approach-specific configuration
+5. Feeds into:
+   - NIM: riva-062-deploy-nim-from-s3.sh
+   - RIVA: riva-070-setup-traditional-riva-server.sh
 
 ════════════════════════════════════════════════════════════════════════════
 EOF
@@ -267,138 +220,182 @@ fi
 echo ""
 
 # =============================================================================
-# Step 2: Discover S3 Models
+# Step 2: Discover S3 Components
 # =============================================================================
-log_info "📋 Step 2: S3 Model Discovery"
+log_info "📋 Step 2: S3 Component Discovery"
 echo "========================================"
 
 # Check S3 access
-if ! aws s3 ls "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/" >/dev/null 2>&1; then
-    log_error "Cannot access S3 bucket: s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/"
+if ! aws s3 ls "s3://${S3_BUCKET}/" >/dev/null 2>&1; then
+    log_error "Cannot access S3 bucket: s3://${S3_BUCKET}/"
     echo "Please ensure AWS credentials are configured and bucket exists."
     exit 1
 fi
 
-# Discover models by GPU type
-declare -A DISCOVERED_MODELS
-declare -A MODEL_SIZES
-declare -A MODEL_TYPES
-declare -A MODEL_CAPABILITIES
+# Discover NIM containers and RIVA components
+declare -A NIM_CONTAINERS
+declare -A NIM_SIZES
+declare -A RIVA_SERVERS
+declare -A RIVA_SERVER_SIZES
+declare -A RIVA_MODELS
+declare -A RIVA_MODEL_SIZES
 
-log_info "Scanning S3 for cached models..."
+log_info "Scanning S3 for NIM containers..."
 
-# Scan T4 models
-if aws s3 ls "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/" >/dev/null 2>&1; then
+# Scan NIM containers
+if aws s3 ls "s3://${S3_BUCKET}/${S3_NIM_CONTAINERS_PREFIX}/t4-containers/" >/dev/null 2>&1; then
+    while IFS= read -r line; do
+        if [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2})\ +([0-9.]+\ [KMGT]iB)\ (.+\.tar\.gz|.+\.tar)$ ]]; then
+            container_date="${BASH_REMATCH[1]}"
+            container_size="${BASH_REMATCH[2]}"
+            container_file="${BASH_REMATCH[3]}"
+
+            NIM_CONTAINERS["$container_file"]="s3://${S3_BUCKET}/${S3_NIM_CONTAINERS_PREFIX}/t4-containers/$container_file"
+            NIM_SIZES["$container_file"]="$container_size"
+        fi
+    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_NIM_CONTAINERS_PREFIX}/t4-containers/" --human-readable)
+fi
+
+log_info "Scanning S3 for RIVA server containers..."
+
+# Scan RIVA server containers
+if aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_CONTAINERS_PREFIX}/" >/dev/null 2>&1; then
     while IFS= read -r line; do
         if [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2})\ +([0-9.]+\ [KMGT]iB)\ (.+\.tar\.gz)$ ]]; then
+            server_date="${BASH_REMATCH[1]}"
+            server_size="${BASH_REMATCH[2]}"
+            server_file="${BASH_REMATCH[3]}"
+
+            RIVA_SERVERS["$server_file"]="s3://${S3_BUCKET}/${S3_RIVA_CONTAINERS_PREFIX}/$server_file"
+            RIVA_SERVER_SIZES["$server_file"]="$server_size"
+        fi
+    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_CONTAINERS_PREFIX}/" --human-readable)
+fi
+
+log_info "Scanning S3 for RIVA model files..."
+
+# Scan RIVA model files
+if aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" >/dev/null 2>&1; then
+    while IFS= read -r line; do
+        if [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2})\ +([0-9.]+\ [KMGT]iB)\ (.+\.riva)$ ]]; then
             model_date="${BASH_REMATCH[1]}"
             model_size="${BASH_REMATCH[2]}"
             model_file="${BASH_REMATCH[3]}"
-            
-            DISCOVERED_MODELS["t4:$model_file"]="s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/$model_file"
-            MODEL_SIZES["t4:$model_file"]="$model_size"
-            
-            # Classify model type based on filename
-            case "$model_file" in
-                *"ctc"*"streaming"*|*"ctc-riva"*) 
-                    MODEL_TYPES["t4:$model_file"]="streaming"
-                    MODEL_CAPABILITIES["t4:$model_file"]="Real-time CTC streaming transcription"
-                    ;;
-                *"tdt"*"offline"*) 
-                    MODEL_TYPES["t4:$model_file"]="offline"
-                    MODEL_CAPABILITIES["t4:$model_file"]="High-accuracy TDT batch processing"
-                    ;;
-                *"punctuation"*) 
-                    MODEL_TYPES["t4:$model_file"]="enhancement"
-                    MODEL_CAPABILITIES["t4:$model_file"]="Punctuation and formatting enhancement"
-                    ;;
-                *) 
-                    MODEL_TYPES["t4:$model_file"]="unknown"
-                    MODEL_CAPABILITIES["t4:$model_file"]="Unknown model type"
-                    ;;
-            esac
+
+            RIVA_MODELS["$model_file"]="s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/$model_file"
+            RIVA_MODEL_SIZES["$model_file"]="$model_size"
         fi
-    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/" --human-readable)
+    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" --human-readable)
 fi
 
-# Display discovered models
-echo "🔍 Discovered Models:"
-echo "--------------------"
+# Display discovered components
+echo "🔍 Discovered Components:"
+echo "========================"
 
-STREAMING_MODELS=()
-OFFLINE_MODELS=()
-ENHANCEMENT_MODELS=()
-COMPATIBLE_MODELS=()
-
-for model_key in "${!DISCOVERED_MODELS[@]}"; do
-    model_gpu=$(echo "$model_key" | cut -d':' -f1)
-    model_file=$(echo "$model_key" | cut -d':' -f2)
-    model_type="${MODEL_TYPES[$model_key]}"
-    model_size="${MODEL_SIZES[$model_key]}"
-    model_capability="${MODEL_CAPABILITIES[$model_key]}"
-    
-    # Check GPU compatibility
-    compatible="❌"
-    if [[ "$model_gpu" == "$GPU_TYPE" ]] || [[ "$GPU_TYPE" == "unknown" ]]; then
-        compatible="✅"
-        COMPATIBLE_MODELS+=("$model_key")
-    fi
-    
-    echo "   $compatible $model_file"
-    echo "      📊 Size: $model_size"
-    echo "      🎯 Type: $model_type"
-    echo "      🔧 GPU: $model_gpu"
-    echo "      💡 Capability: $model_capability"
+echo ""
+echo "🚀 NIM CONTAINERS (Self-contained):"
+echo "-----------------------------------"
+if [[ ${#NIM_CONTAINERS[@]} -gt 0 ]]; then
+    for container_file in "${!NIM_CONTAINERS[@]}"; do
+        container_size="${NIM_SIZES[$container_file]}"
+        echo "   ✅ $container_file"
+        echo "      📊 Size: $container_size"
+        echo "      🎯 Type: Self-contained NIM"
+        echo "      💡 Ready to run with docker run"
+        echo ""
+    done
+else
+    echo "   ❌ No NIM containers found"
     echo ""
-    
-    # Categorize for recommendations
-    case "$model_type" in
-        "streaming") STREAMING_MODELS+=("$model_key") ;;
-        "offline") OFFLINE_MODELS+=("$model_key") ;;
-        "enhancement") ENHANCEMENT_MODELS+=("$model_key") ;;
-    esac
-done
+fi
 
-if [[ ${#COMPATIBLE_MODELS[@]} -eq 0 ]]; then
-    log_warning "No compatible models found for GPU type: $GPU_TYPE"
-    echo "Available GPU types in S3: $(printf '%s\n' "${!DISCOVERED_MODELS[@]}" | cut -d':' -f1 | sort -u | tr '\n' ' ')"
+echo "🏗 RIVA COMPONENTS (Server + Models):"
+echo "-------------------------------------"
+echo "📦 RIVA Server Containers:"
+if [[ ${#RIVA_SERVERS[@]} -gt 0 ]]; then
+    for server_file in "${!RIVA_SERVERS[@]}"; do
+        server_size="${RIVA_SERVER_SIZES[$server_file]}"
+        echo "   ✅ $server_file"
+        echo "      📊 Size: $server_size"
+        echo "      🎯 Type: RIVA server container"
+        echo "      💡 Requires separate model files"
+        echo ""
+    done
+else
+    echo "   ❌ No RIVA server containers found"
+    echo ""
+fi
+
+echo "🧠 RIVA Model Files:"
+if [[ ${#RIVA_MODELS[@]} -gt 0 ]]; then
+    for model_file in "${!RIVA_MODELS[@]}"; do
+        model_size="${RIVA_MODEL_SIZES[$model_file]}"
+        echo "   ✅ $model_file"
+        echo "      📊 Size: $model_size"
+        echo "      🎯 Type: RIVA model"
+        echo "      💡 Loads into RIVA server"
+        echo ""
+    done
+else
+    echo "   ❌ No RIVA model files found"
+    echo ""
+fi
+
+# Check if we have viable deployment options
+NIM_AVAILABLE=$([[ ${#NIM_CONTAINERS[@]} -gt 0 ]] && echo "true" || echo "false")
+RIVA_AVAILABLE=$([[ ${#RIVA_SERVERS[@]} -gt 0 && ${#RIVA_MODELS[@]} -gt 0 ]] && echo "true" || echo "false")
+
+if [[ "$NIM_AVAILABLE" == "false" && "$RIVA_AVAILABLE" == "false" ]]; then
+    log_error "No viable deployment options found in S3"
+    echo "Need either:"
+    echo "  - NIM containers in s3://${S3_BUCKET}/${S3_NIM_CONTAINERS_PREFIX}/t4-containers/"
+    echo "  - RIVA server + models in s3://${S3_BUCKET}/${S3_RIVA_CONTAINERS_PREFIX}/ and s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/"
     exit 1
 fi
 
-log_success "Found ${#COMPATIBLE_MODELS[@]} compatible models for $GPU_TYPE GPU"
+log_success "Found viable deployment options: NIM=$NIM_AVAILABLE, RIVA=$RIVA_AVAILABLE"
 
 # =============================================================================
-# Step 3: Discovery Summary
+# Step 3: Deployment Strategy Choice
 # =============================================================================
-log_info "📋 Step 3: Discovery Summary"
+log_info "📋 Step 3: Deployment Strategy Choice"
 echo "========================================"
 
-# Get worker instance info from .env
-WORKER_IP=$(grep "RIVA_HOST=" .env | cut -d'=' -f2 | head -1)
-if [[ "$WORKER_IP" == "auto_detected" ]]; then
-    WORKER_IP="Not deployed yet"
+echo "🖥️  Control Host: $(hostname -I | awk '{print $1}') ($(hostname))"
+echo "🎮 GPU Target: T4 Tesla (g4dn.xlarge)"
+echo ""
+
+echo "📋 AVAILABLE DEPLOYMENT OPTIONS:"
+echo "================================"
+
+if [[ "$NIM_AVAILABLE" == "true" ]]; then
+    echo "🚀 Option 1: NIM Deployment"
+    echo "   Available containers: ${#NIM_CONTAINERS[@]}"
+    for container_file in "${!NIM_CONTAINERS[@]}"; do
+        echo "   • $container_file (${NIM_SIZES[$container_file]})"
+    done
+    echo "   ✅ Self-contained, faster startup"
+    echo "   ✅ Modern cloud-native architecture"
+    echo ""
 fi
 
-echo "🖥️  Control Host: $(hostname -I | awk '{print $1}') ($(hostname))"
-echo "🎮 GPU Worker: $WORKER_IP (g4dn.xlarge)"
-echo "🔧 GPU Type: T4 Tesla (SM 7.5)"
-echo ""
+if [[ "$RIVA_AVAILABLE" == "true" ]]; then
+    echo "🏗 Option 2: Traditional RIVA Deployment"
+    echo "   Available servers: ${#RIVA_SERVERS[@]}"
+    for server_file in "${!RIVA_SERVERS[@]}"; do
+        echo "   • $server_file (${RIVA_SERVER_SIZES[$server_file]})"
+    done
+    echo "   Available models: ${#RIVA_MODELS[@]}"
+    for model_file in "${!RIVA_MODELS[@]}"; do
+        echo "   • $model_file (${RIVA_MODEL_SIZES[$model_file]})"
+    done
+    echo "   ✅ Model flexibility, traditional API"
+    echo "   ✅ Smaller individual components"
+    echo ""
+fi
 
-echo "📦 S3 Containers Found:"
-echo "   • parakeet-0-6b-ctc-t4-working-20250914-215809.tar (20.5 GiB) ⭐ T4 Ready"
-echo "   • parakeet-ctc-1.1b-asr-1.0.0.tar (13.34 GiB) - H100 only"
-echo ""
-
-echo "🧠 S3 Models Found:"
-echo "   • parakeet-0-6b-ctc-riva-t4-cache.tar.gz (4.4 GiB) ⭐ Streaming T4"
-echo "   • parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz (896.8 MiB) ⭐ Offline T4"
-echo "   • punctuation-riva-t4-cache.tar.gz (384.8 MiB) ⭐ Enhancement T4"
-echo ""
-
-echo ""
-echo "💡 Note: ⭐ indicates compatibility with detected instance geometry ($INSTANCE_TYPE)"
-echo "✅ Ready for T4 deployment with 3 compatible models"
-echo "⚡ Pre-compiled TensorRT engines will enable fast startup"
+echo "💡 Both approaches provide equivalent ASR functionality"
+echo "🔧 Choice depends on your deployment preferences and constraints"
 echo ""
 
 # =============================================================================
@@ -407,82 +404,112 @@ echo ""
 log_info "📋 Step 4: Interactive Configuration"
 echo "========================================"
 
-echo "Select deployment strategy:"
-echo "1) Fast streaming only (real-time transcription)"
-echo "   → Loads: parakeet-0-6b-ctc-riva-t4-cache.tar.gz (4.4 GiB)"
-echo "   → Use case: Live audio transcription, WebSocket streaming"
-echo ""
-echo "2) High accuracy batch only (file processing)"
-echo "   → Loads: parakeet-tdt-0.6b-v2-offline-t4-cache.tar.gz (896.8 MiB)"
-echo "   → Use case: File uploads, batch processing, highest accuracy"
-echo ""
-echo "3) Two-pass hybrid (streaming + batch)"
-echo "   → Loads: Both streaming + offline models (5.3 GiB total)"
-echo "   → Use case: Live transcription with high-accuracy refinement"
-echo ""
-echo "4) Custom model selection"
-echo "   → Loads: User-selected models from available options"
-echo "   → Use case: Specific requirements or testing scenarios"
-echo ""
-echo "5) Skip configuration (discovery only)"
-echo "   → Loads: Nothing, just shows what's available"
-echo "   → Use case: Just check S3 cache without configuring .env"
+echo "🎯 Choose your deployment approach:"
 echo ""
 
+# Build options based on what's available
+options=()
+if [[ "$NIM_AVAILABLE" == "true" ]]; then
+    options+=("1) NIM Deployment (Modern)")
+    echo "1) 🚀 NIM Deployment (Modern)"
+    echo "   → Self-contained containers with built-in models"
+    echo "   → Faster startup, cloud-native architecture"
+    echo "   → Available containers: ${#NIM_CONTAINERS[@]}"
+    echo ""
+fi
+
+if [[ "$RIVA_AVAILABLE" == "true" ]]; then
+    next_num=$((${#options[@]} + 1))
+    options+=("$next_num) RIVA Deployment (Traditional)")
+    echo "$next_num) 🏗 Traditional RIVA Deployment"
+    echo "   → RIVA server + separate model files"
+    echo "   → Model flexibility, traditional API"
+    echo "   → Available: ${#RIVA_SERVERS[@]} servers, ${#RIVA_MODELS[@]} models"
+    echo ""
+fi
+
+next_num=$((${#options[@]} + 1))
+options+=("$next_num) Skip configuration (discovery only)")
+echo "$next_num) 📋 Skip configuration (discovery only)"
+echo "   → Just show what's available, don't configure .env"
+echo "   → Use case: Planning or verification"
+echo ""
+
+# Get choice
 while true; do
-    read -p "Choice [1-5]: " choice
-    case $choice in
-        1|2|3|4|5) break ;;
-        *) echo "Please enter 1, 2, 3, 4, or 5" ;;
-    esac
+    read -p "Choice [1-$next_num]: " choice
+    if [[ "$choice" =~ ^[1-9][0-9]*$ ]] && [[ $choice -le $next_num ]]; then
+        break
+    else
+        echo "Please enter a number between 1 and $next_num"
+    fi
 done
 
 # Configuration variables
-PRIMARY_MODEL=""
-SECONDARY_MODEL=""
-ENHANCEMENT_MODEL=""
-DEPLOYMENT_MODE=""
+DEPLOYMENT_APPROACH=""
+SELECTED_CONTAINER=""
+SELECTED_SERVER=""
+SELECTED_MODEL=""
 
-case $choice in
-    1) # Streaming only
-        DEPLOYMENT_MODE="streaming_only"
-        if [[ ${#STREAMING_MODELS[@]} -gt 0 ]]; then
-            PRIMARY_MODEL="${STREAMING_MODELS[0]}"
-        else
-            log_error "No streaming models available"
-            exit 1
-        fi
-        ;;
-    2) # Batch only
-        DEPLOYMENT_MODE="batch_only"
-        if [[ ${#OFFLINE_MODELS[@]} -gt 0 ]]; then
-            PRIMARY_MODEL="${OFFLINE_MODELS[0]}"
-        else
-            log_error "No offline models available"
-            exit 1
-        fi
-        ;;
-    3) # Two-pass hybrid
-        DEPLOYMENT_MODE="two_pass"
-        if [[ ${#STREAMING_MODELS[@]} -gt 0 ]]; then
-            PRIMARY_MODEL="${STREAMING_MODELS[0]}"
-        fi
-        if [[ ${#OFFLINE_MODELS[@]} -gt 0 ]]; then
-            SECONDARY_MODEL="${OFFLINE_MODELS[0]}"
-        fi
-        if [[ ${#ENHANCEMENT_MODELS[@]} -gt 0 ]]; then
-            ENHANCEMENT_MODEL="${ENHANCEMENT_MODELS[0]}"
-        fi
-        ;;
-    4) # Custom selection
-        echo "Custom configuration not implemented yet"
-        exit 0
-        ;;
-    5) # Skip configuration
-        log_info "Discovery complete. Skipping .env configuration."
-        exit 0
-        ;;
-esac
+# Process choice
+if [[ "$NIM_AVAILABLE" == "true" && "$choice" == "1" ]]; then
+    DEPLOYMENT_APPROACH="nim"
+
+    # If multiple NIM containers, let user choose
+    if [[ ${#NIM_CONTAINERS[@]} -gt 1 ]]; then
+        echo ""
+        echo "🚀 Select NIM container:"
+        container_array=($(printf '%s\n' "${!NIM_CONTAINERS[@]}" | sort))
+        for i in "${!container_array[@]}"; do
+            container_file="${container_array[$i]}"
+            container_size="${NIM_SIZES[$container_file]}"
+            echo "  $((i+1))) $container_file (${container_size})"
+        done
+        echo ""
+        while true; do
+            read -p "Container choice [1-${#container_array[@]}]: " container_choice
+            if [[ "$container_choice" =~ ^[1-9][0-9]*$ ]] && [[ $container_choice -le ${#container_array[@]} ]]; then
+                SELECTED_CONTAINER="${container_array[$((container_choice-1))]}"
+                break
+            fi
+        done
+    else
+        SELECTED_CONTAINER="${!NIM_CONTAINERS[@]}"
+    fi
+
+elif [[ "$RIVA_AVAILABLE" == "true" ]] && ([[ "$choice" == "2" && "$NIM_AVAILABLE" == "false" ]] || [[ "$choice" == "2" && "$NIM_AVAILABLE" == "true" ]]); then
+    DEPLOYMENT_APPROACH="riva"
+
+    # Select RIVA server (usually just one)
+    SELECTED_SERVER="${!RIVA_SERVERS[@]}"
+
+    # If multiple models, let user choose
+    if [[ ${#RIVA_MODELS[@]} -gt 1 ]]; then
+        echo ""
+        echo "🧠 Select RIVA model:"
+        model_array=($(printf '%s\n' "${!RIVA_MODELS[@]}" | sort))
+        for i in "${!model_array[@]}"; do
+            model_file="${model_array[$i]}"
+            model_size="${RIVA_MODEL_SIZES[$model_file]}"
+            echo "  $((i+1))) $model_file (${model_size})"
+        done
+        echo ""
+        while true; do
+            read -p "Model choice [1-${#model_array[@]}]: " model_choice
+            if [[ "$model_choice" =~ ^[1-9][0-9]*$ ]] && [[ $model_choice -le ${#model_array[@]} ]]; then
+                SELECTED_MODEL="${model_array[$((model_choice-1))]}"
+                break
+            fi
+        done
+    else
+        SELECTED_MODEL="${!RIVA_MODELS[@]}"
+    fi
+
+else
+    # Skip configuration
+    log_info "Discovery complete. Skipping .env configuration."
+    exit 0
+fi
 
 # =============================================================================
 # Step 5: Update .env Configuration
@@ -490,34 +517,21 @@ esac
 log_info "📋 Step 5: Update .env Configuration"
 echo "========================================"
 
-if [[ -z "$PRIMARY_MODEL" ]]; then
-    log_error "No primary model selected"
-    exit 1
-fi
-
 echo "Proposed configuration:"
 echo "----------------------"
-echo "Deployment Mode: $DEPLOYMENT_MODE"
+echo "Deployment Approach: $DEPLOYMENT_APPROACH"
 
-if [[ -n "$PRIMARY_MODEL" ]]; then
-    primary_file=$(echo "$PRIMARY_MODEL" | cut -d':' -f2)
-    echo "Primary Model: $primary_file"
-    echo "   Type: ${MODEL_TYPES[$PRIMARY_MODEL]}"
-    echo "   Size: ${MODEL_SIZES[$PRIMARY_MODEL]}"
-fi
-
-if [[ -n "$SECONDARY_MODEL" ]]; then
-    secondary_file=$(echo "$SECONDARY_MODEL" | cut -d':' -f2)
-    echo "Secondary Model: $secondary_file"
-    echo "   Type: ${MODEL_TYPES[$SECONDARY_MODEL]}"
-    echo "   Size: ${MODEL_SIZES[$SECONDARY_MODEL]}"
-fi
-
-if [[ -n "$ENHANCEMENT_MODEL" ]]; then
-    enhancement_file=$(echo "$ENHANCEMENT_MODEL" | cut -d':' -f2)
-    echo "Enhancement Model: $enhancement_file"
-    echo "   Type: ${MODEL_TYPES[$ENHANCEMENT_MODEL]}"
-    echo "   Size: ${MODEL_SIZES[$ENHANCEMENT_MODEL]}"
+if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
+    echo "Selected NIM Container: $SELECTED_CONTAINER"
+    echo "   Size: ${NIM_SIZES[$SELECTED_CONTAINER]}"
+    echo "   Path: ${NIM_CONTAINERS[$SELECTED_CONTAINER]}"
+elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
+    echo "Selected RIVA Server: $SELECTED_SERVER"
+    echo "   Size: ${RIVA_SERVER_SIZES[$SELECTED_SERVER]}"
+    echo "   Path: ${RIVA_SERVERS[$SELECTED_SERVER]}"
+    echo "Selected RIVA Model: $SELECTED_MODEL"
+    echo "   Size: ${RIVA_MODEL_SIZES[$SELECTED_MODEL]}"
+    echo "   Path: ${RIVA_MODELS[$SELECTED_MODEL]}"
 fi
 
 echo ""
@@ -525,60 +539,50 @@ read -p "Update .env file with this configuration? [y/N]: " update_env
 
 if [[ "$update_env" =~ ^[Yy]$ ]]; then
     log_info "Updating .env file..."
-    
-    # Add S3 model discovery section
-    if ! grep -q "# S3 Model Discovery Configuration" .env; then
+
+    # Add S3 deployment strategy section
+    if ! grep -q "# S3 Deployment Strategy Configuration" .env; then
         echo "" >> .env
         echo "# ============================================================================" >> .env
-        echo "# S3 Model Discovery Configuration (auto-generated by riva-006)" >> .env
+        echo "# S3 Deployment Strategy Configuration (auto-generated by riva-007)" >> .env
         echo "# ============================================================================" >> .env
     fi
-    
+
     # Update or add configuration values
-    update_env_value "NIM_S3_DISCOVERY_TIMESTAMP" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-    update_env_value "NIM_DEPLOYMENT_MODE" "$DEPLOYMENT_MODE"
-    update_env_value "NIM_GPU_TYPE_DETECTED" "$GPU_TYPE"
-    update_env_value "NIM_GPU_MEMORY_MB" "$GPU_MEMORY"
-    
-    if [[ -n "$PRIMARY_MODEL" ]]; then
-        primary_file=$(echo "$PRIMARY_MODEL" | cut -d':' -f2)
-        update_env_value "NIM_S3_MODEL_PRIMARY" "$primary_file"
-        update_env_value "NIM_S3_MODEL_PRIMARY_TYPE" "${MODEL_TYPES[$PRIMARY_MODEL]}"
-        update_env_value "NIM_S3_MODEL_PRIMARY_PATH" "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/$primary_file"
+    update_env_value "S3_DISCOVERY_TIMESTAMP" "$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    update_env_value "DEPLOYMENT_APPROACH" "$DEPLOYMENT_APPROACH"
+    update_env_value "GPU_TYPE_DETECTED" "$GPU_TYPE"
+    update_env_value "GPU_MEMORY_MB" "$GPU_MEMORY"
+
+    if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
+        update_env_value "NIM_CONTAINER_SELECTED" "$SELECTED_CONTAINER"
+        update_env_value "NIM_CONTAINER_SIZE" "${NIM_SIZES[$SELECTED_CONTAINER]}"
+        update_env_value "NIM_CONTAINER_PATH" "${NIM_CONTAINERS[$SELECTED_CONTAINER]}"
+
+        # Set deployment strategy to use NIM
+        update_env_value "DEPLOYMENT_STRATEGY" "1"  # NIM strategy
+        update_env_value "USE_NIM_DEPLOYMENT" "true"
+        update_env_value "USE_RIVA_DEPLOYMENT" "false"
+
+    elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
+        update_env_value "RIVA_SERVER_SELECTED" "$SELECTED_SERVER"
+        update_env_value "RIVA_SERVER_SIZE" "${RIVA_SERVER_SIZES[$SELECTED_SERVER]}"
+        update_env_value "RIVA_SERVER_PATH" "${RIVA_SERVERS[$SELECTED_SERVER]}"
+        update_env_value "RIVA_MODEL_SELECTED" "$SELECTED_MODEL"
+        update_env_value "RIVA_MODEL_SIZE" "${RIVA_MODEL_SIZES[$SELECTED_MODEL]}"
+        update_env_value "RIVA_MODEL_PATH" "${RIVA_MODELS[$SELECTED_MODEL]}"
+
+        # Update RIVA_MODEL to use the selected filename without .riva extension
+        riva_model_name=$(basename "$SELECTED_MODEL" .riva)
+        update_env_value "RIVA_MODEL" "$riva_model_name"
+
+        # Set deployment strategy to use traditional RIVA
+        update_env_value "DEPLOYMENT_STRATEGY" "2"  # Traditional RIVA strategy
+        update_env_value "USE_NIM_DEPLOYMENT" "false"
+        update_env_value "USE_RIVA_DEPLOYMENT" "true"
     fi
-    
-    if [[ -n "$SECONDARY_MODEL" ]]; then
-        secondary_file=$(echo "$SECONDARY_MODEL" | cut -d':' -f2)
-        update_env_value "NIM_S3_MODEL_SECONDARY" "$secondary_file"
-        update_env_value "NIM_S3_MODEL_SECONDARY_TYPE" "${MODEL_TYPES[$SECONDARY_MODEL]}"
-        update_env_value "NIM_S3_MODEL_SECONDARY_PATH" "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/$secondary_file"
-    fi
-    
-    if [[ -n "$ENHANCEMENT_MODEL" ]]; then
-        enhancement_file=$(echo "$ENHANCEMENT_MODEL" | cut -d':' -f2)
-        update_env_value "NIM_S3_MODEL_ENHANCEMENT" "$enhancement_file"
-        update_env_value "NIM_S3_MODEL_ENHANCEMENT_TYPE" "${MODEL_TYPES[$ENHANCEMENT_MODEL]}"
-        update_env_value "NIM_S3_MODEL_ENHANCEMENT_PATH" "s3://${S3_BUCKET}/${S3_MODELS_PREFIX}/t4-models/$enhancement_file"
-    fi
-    
-    # Set deployment strategy flags
-    case "$DEPLOYMENT_MODE" in
-        "streaming_only")
-            update_env_value "NIM_ENABLE_REAL_TIME" "true"
-            update_env_value "NIM_ENABLE_BATCH" "false"
-            ;;
-        "batch_only")
-            update_env_value "NIM_ENABLE_REAL_TIME" "false"
-            update_env_value "NIM_ENABLE_BATCH" "true"
-            ;;
-        "two_pass")
-            update_env_value "NIM_ENABLE_REAL_TIME" "true"
-            update_env_value "NIM_ENABLE_BATCH" "true"
-            update_env_value "NIM_ENABLE_TWO_PASS" "true"
-            ;;
-    esac
-    
-    log_success ".env file updated with S3 model configuration"
+
+    log_success ".env file updated with deployment strategy configuration"
 else
     log_info "Skipping .env file update"
 fi
@@ -587,20 +591,39 @@ fi
 # Summary
 # =============================================================================
 echo ""
-log_success "✅ S3 Model Discovery Complete!"
+log_success "✅ S3 Deployment Strategy Discovery Complete!"
 echo "=================================================================="
 echo "Summary:"
 echo "  • GPU Type: $GPU_TYPE (${GPU_MEMORY}MB)"
-echo "  • Compatible Models: ${#COMPATIBLE_MODELS[@]}"
-echo "  • Deployment Mode: $DEPLOYMENT_MODE"
+echo "  • Deployment Approach: $DEPLOYMENT_APPROACH"
+if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
+    echo "  • Selected NIM Container: $SELECTED_CONTAINER"
+    echo "  • Container Size: ${NIM_SIZES[$SELECTED_CONTAINER]}"
+elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
+    echo "  • Selected RIVA Server: $SELECTED_SERVER"
+    echo "  • Selected RIVA Model: $SELECTED_MODEL"
+    echo "  • Total Size: ${RIVA_SERVER_SIZES[$SELECTED_SERVER]} + ${RIVA_MODEL_SIZES[$SELECTED_MODEL]}"
+fi
 echo "  • Configuration: $(if [[ "$update_env" =~ ^[Yy]$ ]]; then echo "Updated .env"; else echo "Manual"; fi)"
 echo ""
 echo "📍 Next Steps:"
-echo "1. Deploy models: ./scripts/riva-062-deploy-nim-from-s3.sh"
-echo "2. Test deployment: ./scripts/riva-063-monitor-single-model-readiness.sh"
-echo "3. Deploy WebSocket app: ./scripts/riva-090-deploy-websocket-asr-application.sh"
+if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
+    echo "1. Deploy NIM: ./scripts/riva-062-deploy-nim-from-s3.sh"
+    echo "2. Test NIM: ./scripts/riva-063-monitor-single-model-readiness.sh"
+    echo "3. Deploy WebSocket: ./scripts/riva-070-deploy-websocket-server.sh"
+elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
+    echo "1. Deploy RIVA: ./scripts/riva-070-setup-traditional-riva-server.sh"
+    echo "2. Start RIVA: ./scripts/riva-085-start-traditional-riva-server.sh"
+    echo "3. Deploy WebSocket: ./scripts/riva-070-deploy-websocket-server.sh"
+fi
 echo ""
 echo "💡 Tips:"
-echo "  • S3 cached models deploy 10x faster than fresh downloads"
-echo "  • Two-pass architecture provides best accuracy and user experience"
-echo "  • Run this script again to reconfigure model selection"
+echo "  • S3 cached components deploy 10x faster than fresh downloads"
+if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
+    echo "  • NIM containers include model and server in one package"
+    echo "  • Faster startup with no model loading wait time"
+elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
+    echo "  • RIVA approach offers more model flexibility"
+    echo "  • Can swap models without changing server container"
+fi
+echo "  • Run this script again to change deployment approach"
