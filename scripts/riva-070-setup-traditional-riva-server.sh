@@ -623,7 +623,7 @@ EOQUICKSTART
             if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
                 echo -e '✅ [2.10] Models deployed to Triton'
             else
-                echo "❌ [2.10] Model deployment failed (exit code: $DEPLOY_EXIT_CODE)"
+                echo "ERROR [2.10] Model deployment failed \(exit code: $DEPLOY_EXIT_CODE\)"
                 echo "Check the output above for specific error messages"
                 exit 1
             fi
@@ -667,7 +667,7 @@ EOQUICKSTART
             echo -e '🎉 [STEP 2/5] Model setup and deployment completed successfully!'
         else
             echo ''
-            echo -e '❌ [2.7] Model build failed (exit code: $BUILD_EXIT_CODE)'
+            echo -e "ERROR [2.7] Model build failed \(exit code: $BUILD_EXIT_CODE\)"
             echo ''
             echo '🔍 Troubleshooting Information:'
             echo "   • Working directory: $(pwd)"
