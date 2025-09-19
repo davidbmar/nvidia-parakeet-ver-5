@@ -346,56 +346,137 @@ export NGC_API_KEY=\"$NGC_API_KEY\"
 EOCONFIG
 " "Creating Riva configuration"
 
-# Pull Riva container
-echo -e "${BLUE}📦 Pulling NVIDIA Riva container...${NC}"
+# Load Riva container from S3
+echo -e "${BLUE}📦 Loading NVIDIA Riva container from S3...${NC}"
 
-# Determine Riva version
-RIVA_VERSION="${RIVA_VERSION:-2.15.0}"
+# Use version from .env file
+RIVA_VERSION="${RIVA_SERVER_SELECTED#*speech-}"
+RIVA_VERSION="${RIVA_VERSION%.tar.gz}"
 
 run_on_server "
-    # Login to NGC if API key is provided
-    if [ -n '$NGC_API_KEY' ]; then
-        echo '$NGC_API_KEY' | docker login nvcr.io --username '\$oauthtoken' --password-stdin
+    # Install AWS CLI if not available
+    if ! command -v aws &> /dev/null; then
+        echo '🔧 Installing AWS CLI...'
+        curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'
+        unzip -q awscliv2.zip
+        sudo ./aws/install
+        rm -rf aws awscliv2.zip
     fi
-    
-    # Pull Riva server container
-    echo '📥 Pulling Riva server container...'
-    docker pull nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION
-    
-    echo '✅ Riva container pulled successfully'
-" "Pulling Riva container"
 
-# Download and setup Parakeet model
-echo -e "${BLUE}🤖 Setting up Parakeet RNNT model...${NC}"
+    # Create cache directory
+    sudo mkdir -p /mnt/cache/riva-cache
+    sudo chown \$USER:\$USER /mnt/cache/riva-cache
+
+    # Download RIVA container from S3 if not cached
+    if [ ! -f /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz ]; then
+        echo '📥 Downloading RIVA container from S3...'
+        aws s3 cp $RIVA_SERVER_PATH /mnt/cache/riva-cache/ --region $AWS_REGION
+    else
+        echo '✅ RIVA container already cached'
+    fi
+
+    # Load container into Docker
+    echo '🔄 Loading RIVA container into Docker...'
+    docker load -i /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz
+
+    echo '✅ RIVA container loaded successfully'
+" "Loading RIVA container from S3"
+
+# Download and setup RIVA model using QuickStart toolkit
+echo -e "${BLUE}🤖 Setting up RIVA model using QuickStart toolkit...${NC}"
 
 run_on_server "
     cd /opt/riva
-    
-    # Check if models already exist
-    if [ -d 'models/asr' ] && [ -n \"\$(ls -A models/asr 2>/dev/null)\" ]; then
-        echo '✅ Parakeet models already exist'
+
+    # Check if deployed models already exist
+    if [ -d 'deployed_models' ] && [ -n \"\$(find deployed_models -name 'config.pbtxt' 2>/dev/null)\" ]; then
+        echo '✅ RIVA deployed models already exist'
+        echo \"Found \$(find deployed_models -name 'config.pbtxt' | wc -l) deployed models\"
     else
-        echo '📥 Downloading Parakeet RNNT model...'
-        
-        # Create model directory
-        mkdir -p models/asr
-        
-        # Download model using available methods
-        if command -v ngc &> /dev/null && [ -n '$NGC_API_KEY' ]; then
-            echo 'Using NGC CLI...'
-            ngc registry model download-version nvidia/riva/rmir_asr_parakeet_rnnt:$RIVA_VERSION --dest models/
-        else
-            echo 'Using Riva model initialization...'
-            # Use Riva's built-in model initialization
-            docker run --rm --gpus all \\
-                -v /opt/riva/models:/models \\
-                nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION \\
-                riva_init.sh
+        echo '📥 Setting up RIVA model deployment...'
+
+        # Download RIVA QuickStart toolkit from S3
+        if [ ! -f /mnt/cache/riva-cache/riva_quickstart_$RIVA_VERSION.zip ]; then
+            echo '📥 Downloading RIVA QuickStart toolkit from S3...'
+            aws s3 cp s3://dbm-cf-2-web/bintarball/riva/riva_quickstart_$RIVA_VERSION.zip /mnt/cache/riva-cache/ --region $AWS_REGION
         fi
-        
-        echo '✅ Model download completed'
+
+        # Download model file from S3
+        if [ ! -f /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED ]; then
+            echo '📥 Downloading model file from S3...'
+            aws s3 cp $RIVA_MODEL_PATH /mnt/cache/riva-cache/ --region $AWS_REGION
+        fi
+
+        # Extract QuickStart toolkit
+        echo '🔧 Extracting QuickStart toolkit...'
+        unzip -o /mnt/cache/riva-cache/riva_quickstart_$RIVA_VERSION.zip -d .
+
+        # Setup model directories
+        mkdir -p riva_model_repo deployed_models
+
+        # Copy model file to quickstart directory
+        cp /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED riva_quickstart/models/
+
+        echo '🔄 Converting model using RIVA QuickStart...'
+        cd riva_quickstart
+
+        # Modify config.sh to use our model
+        cat > config.sh << EOQUICKSTART
+#!/bin/bash
+
+# Enable ASR service
+service_enabled_asr=true
+service_enabled_nlp=false
+service_enabled_tts=false
+
+# ASR settings
+models_asr=(\"\$(basename $RIVA_MODEL_SELECTED)\")
+target_language_asr=\"$RIVA_LANGUAGE_CODE\"
+
+# Use local model file
+use_existing_models=false
+
+# GPU settings
+gpus_to_use=\"0\"
+max_batch_size_asr=8
+
+# Advanced settings
+enable_chunking=true
+chunk_size_ms=1600
+EOQUICKSTART
+
+        # Run RIVA build process
+        echo '🚀 Running RIVA model build and deployment...'
+        bash riva_build.sh
+
+        if [ \$? -eq 0 ]; then
+            echo '✅ Model build completed successfully'
+
+            # Start RIVA for model deployment
+            bash riva_start.sh
+
+            # Wait for RIVA to be ready for model deployment
+            echo 'Waiting for RIVA deployment to be ready...'
+            sleep 30
+
+            # Deploy models
+            bash riva_deploy.sh
+
+            # Stop the deployment container
+            bash riva_stop.sh
+
+            # Copy deployed models to main directory
+            cp -r model_repository/* ../deployed_models/
+
+            echo '✅ Model deployment completed'
+        else
+            echo '❌ Model build failed'
+            exit 1
+        fi
+
+        cd ..
     fi
-" "Setting up Parakeet model"
+" "Setting up RIVA model with QuickStart"
 
 # Create Riva service script
 echo -e "${BLUE}⚙️ Creating Riva service...${NC}"
@@ -420,8 +501,9 @@ docker run -d \\
     -p $RIVA_PORT:50051 \\
     -p $RIVA_HTTP_PORT:8000 \\
     -v /opt/riva/deployed_models:/data/models \\
-    -v /opt/riva/logs:/logs \\
+    -v /opt/riva/logs:/opt/riva/logs \\
     -e \"CUDA_VISIBLE_DEVICES=0\" \\
+    -e \"MODEL_REPOS=--model-repository /data/models\" \\
     nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION \\
     /opt/riva/bin/start-riva
 
@@ -447,12 +529,14 @@ echo -e "${BLUE}📋 Pre-startup validation...${NC}"
 
 run_on_server "
     echo 'Checking deployed models...'
-    if [ -d /opt/riva/deployed_models ] && find /opt/riva/deployed_models -name 'config.pbtxt' | head -3; then
+    if [ -d /opt/riva/deployed_models ] && find /opt/riva/deployed_models -name 'config.pbtxt' 2>/dev/null | head -3; then
         echo '✅ Deployed models found'
-        echo \"Total deployed models: \$(find /opt/riva/deployed_models -name 'config.pbtxt' | wc -l)\"
+        echo \"Total deployed models: \$(find /opt/riva/deployed_models -name 'config.pbtxt' 2>/dev/null | wc -l)\"
+        echo 'Model directories:'
+        find /opt/riva/deployed_models -maxdepth 2 -type d -name '*asr*' 2>/dev/null || echo '  No ASR model directories found'
     else
         echo '❌ No deployed models found in /opt/riva/deployed_models'
-        echo 'Please run: ./scripts/riva-043-deploy-models.sh first'
+        echo 'Model deployment may have failed in previous step'
         exit 1
     fi
     
