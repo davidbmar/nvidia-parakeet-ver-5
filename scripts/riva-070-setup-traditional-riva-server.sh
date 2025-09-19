@@ -502,16 +502,34 @@ run_on_server "
         # Setup model directories
         mkdir -p riva_model_repo deployed_models
 
-        # Copy model file to quickstart directory
+        # Prepare QuickStart directory and model files
         echo -e '📋 [2.5] Preparing model files...'
-        cp /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED riva_quickstart/models/
+        QUICKSTART_DIR="riva_quickstart_${RIVA_VERSION}"
+
+        # Verify QuickStart directory exists
+        if [ ! -d "$QUICKSTART_DIR" ]; then
+            echo "❌ QuickStart directory not found: $QUICKSTART_DIR"
+            echo "Available directories:"
+            ls -la | grep riva
+            exit 1
+        fi
+
+        # Create models directory if it doesn't exist
+        mkdir -p "$QUICKSTART_DIR/models"
+
+        # Copy model file to QuickStart directory
+        echo "   📁 Copying model to: $QUICKSTART_DIR/models/"
+        cp /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED "$QUICKSTART_DIR/models/"
         echo -e '✅ [2.5] Model files prepared'
 
         echo ''
         echo -e '🔄 [2.6] Converting model using RIVA QuickStart...'
         echo 'This is the most time-consuming step (10-20 minutes)'
         echo 'Progress will be shown for each sub-step'
-        cd riva_quickstart
+
+        # Navigate to versioned QuickStart directory
+        echo "   📁 Entering QuickStart directory: $QUICKSTART_DIR"
+        cd "$QUICKSTART_DIR"
 
         # Modify config.sh to use our model
         cat > config.sh << EOQUICKSTART
@@ -545,9 +563,19 @@ EOQUICKSTART
         echo 'You may see TensorRT optimization messages - this is normal'
         echo ''
 
-        bash riva_build.sh
+        # Verify riva_build.sh exists before running
+        if [ ! -f "riva_build.sh" ]; then
+            echo "❌ riva_build.sh not found in $(pwd)"
+            echo "Available files:"
+            ls -la *.sh 2>/dev/null || echo "No .sh files found"
+            exit 1
+        fi
 
-        if [ \$? -eq 0 ]; then
+        echo "   🔧 Executing: bash riva_build.sh"
+        bash riva_build.sh
+        BUILD_EXIT_CODE=$?
+
+        if [ $BUILD_EXIT_CODE -eq 0 ]; then
             echo ''
             echo -e '✅ [2.7] Model build completed successfully'
             echo ''
@@ -555,6 +583,14 @@ EOQUICKSTART
             # Start RIVA for model deployment
             echo -e '🚀 [2.8] Starting RIVA deployment container...'
             echo 'This starts a temporary container for model deployment'
+
+            # Verify riva_start.sh exists
+            if [ ! -f "riva_start.sh" ]; then
+                echo "❌ riva_start.sh not found in $(pwd)"
+                exit 1
+            fi
+
+            echo "   🔧 Executing: bash riva_start.sh"
             bash riva_start.sh
             echo -e '✅ [2.8] Deployment container started'
 
@@ -573,18 +609,55 @@ EOQUICKSTART
             echo ''
             echo -e '📦 [2.10] Deploying models to Triton server...'
             echo 'This configures the model for inference'
+
+            # Verify riva_deploy.sh exists
+            if [ ! -f "riva_deploy.sh" ]; then
+                echo "❌ riva_deploy.sh not found in $(pwd)"
+                exit 1
+            fi
+
+            echo "   🔧 Executing: bash riva_deploy.sh"
             bash riva_deploy.sh
-            echo -e '✅ [2.10] Models deployed to Triton'
+            DEPLOY_EXIT_CODE=$?
+
+            if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
+                echo -e '✅ [2.10] Models deployed to Triton'
+            else
+                echo "❌ [2.10] Model deployment failed (exit code: $DEPLOY_EXIT_CODE)"
+                echo "Check the output above for specific error messages"
+                exit 1
+            fi
 
             # Stop the deployment container
             echo ''
             echo -e '🛑 [2.11] Stopping deployment container...'
+
+            # Verify riva_stop.sh exists
+            if [ ! -f "riva_stop.sh" ]; then
+                echo "❌ riva_stop.sh not found in $(pwd)"
+                exit 1
+            fi
+
+            echo "   🔧 Executing: bash riva_stop.sh"
             bash riva_stop.sh
             echo -e '✅ [2.11] Deployment container stopped'
 
             # Copy deployed models to main directory
             echo -e '📋 [2.12] Copying deployed models to final location...'
-            cp -r model_repository/* ../deployed_models/
+            echo "   📁 Source: $(pwd)/model_repository/"
+            echo "   📁 Target: ../deployed_models/"
+
+            # Ensure target directory exists
+            mkdir -p ../deployed_models/
+
+            # Copy with verification
+            if [ -d "model_repository" ] && [ "$(ls -A model_repository)" ]; then
+                cp -r model_repository/* ../deployed_models/
+                echo "   ✅ Models copied successfully"
+            else
+                echo "   ⚠️  No models found in model_repository directory"
+                ls -la model_repository/ || echo "   ❌ model_repository directory not found"
+            fi
 
             # Verify deployment
             DEPLOYED_MODELS=\$(find ../deployed_models -name 'config.pbtxt' | wc -l)
@@ -594,8 +667,20 @@ EOQUICKSTART
             echo -e '🎉 [STEP 2/5] Model setup and deployment completed successfully!'
         else
             echo ''
-            echo -e '❌ [2.7] Model build failed'
-            echo 'Check the output above for specific error messages'
+            echo -e '❌ [2.7] Model build failed (exit code: $BUILD_EXIT_CODE)'
+            echo ''
+            echo '🔍 Troubleshooting Information:'
+            echo "   • Working directory: $(pwd)"
+            echo "   • Available scripts:"
+            ls -la *.sh 2>/dev/null | head -5
+            echo "   • QuickStart version: $RIVA_VERSION"
+            echo "   • Model file: $RIVA_MODEL_SELECTED"
+            echo ''
+            echo '💡 Common solutions:'
+            echo '   1. Verify RIVA container has sufficient resources'
+            echo '   2. Check model file integrity'
+            echo '   3. Ensure NVIDIA drivers are compatible'
+            echo '   4. Re-run script after fixing issues'
             exit 1
         fi
 
