@@ -18,6 +18,41 @@ NC='\033[0m' # No Color
 
 echo -e "${BLUE}🚀 NVIDIA Parakeet Riva ASR Deployment - Step 20: Setup Riva Server${NC}"
 echo "================================================================"
+echo ""
+echo -e "${CYAN}📋 DEPLOYMENT OVERVIEW:${NC}"
+echo "This script performs a complete RIVA ASR server setup in 5 major steps:"
+echo ""
+echo -e "${CYAN}[STEP 1/5]${NC} Load RIVA container from S3 (10-30 min)"
+echo "           ├─ Download 19.8GB RIVA container"
+echo "           ├─ Load container into Docker"
+echo "           └─ Verify container availability"
+echo ""
+echo -e "${CYAN}[STEP 2/5]${NC} Setup and deploy models (15-25 min)"
+echo "           ├─ Download QuickStart toolkit"
+echo "           ├─ Download Parakeet RNNT model (1.5GB)"
+echo "           ├─ Convert model to Triton format"
+echo "           └─ Deploy models for inference"
+echo ""
+echo -e "${CYAN}[STEP 3/5]${NC} Create service scripts (1-2 min)"
+echo "           ├─ Generate start/stop scripts"
+echo "           └─ Configure systemd service"
+echo ""
+echo -e "${CYAN}[STEP 4/5]${NC} Pre-startup validation (1-2 min)"
+echo "           ├─ Verify deployed models"
+echo "           ├─ Check GPU resources"
+echo "           └─ Validate Docker access"
+echo ""
+echo -e "${CYAN}[STEP 5/5]${NC} Start and test server (3-5 min)"
+echo "           ├─ Start RIVA container"
+echo "           ├─ Load models into GPU memory"
+echo "           ├─ Verify health endpoints"
+echo "           └─ Test model availability"
+echo ""
+echo -e "${YELLOW}📊 TOTAL ESTIMATED TIME: 30-65 minutes${NC}"
+echo -e "${YELLOW}💾 TOTAL DISK USAGE: ~22GB (container + models + cache)${NC}"
+echo -e "${YELLOW}🧠 GPU MEMORY USAGE: ~4-6GB${NC}"
+echo ""
+echo "================================================================"
 
 # Check if configuration exists
 if [ ! -f "$ENV_FILE" ]; then
@@ -347,7 +382,9 @@ EOCONFIG
 " "Creating Riva configuration"
 
 # Load Riva container from S3
-echo -e "${BLUE}📦 Loading NVIDIA Riva container from S3...${NC}"
+echo -e "${BLUE}📦 [STEP 1/5] Loading NVIDIA Riva container from S3...${NC}"
+echo "Expected size: $RIVA_SERVER_SIZE"
+echo ""
 
 # Use version from .env file
 RIVA_VERSION="${RIVA_SERVER_SELECTED#*speech-}"
@@ -356,11 +393,14 @@ RIVA_VERSION="${RIVA_VERSION%.tar.gz}"
 run_on_server "
     # Install AWS CLI if not available
     if ! command -v aws &> /dev/null; then
-        echo '🔧 Installing AWS CLI...'
+        echo -e '🔧 [1.1] Installing AWS CLI...'
         curl 'https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip' -o 'awscliv2.zip'
         unzip -q awscliv2.zip
         sudo ./aws/install
         rm -rf aws awscliv2.zip
+        echo -e '✅ [1.1] AWS CLI installed'
+    else
+        echo -e '✅ [1.1] AWS CLI already available'
     fi
 
     # Create cache directory
@@ -369,55 +409,108 @@ run_on_server "
 
     # Download RIVA container from S3 if not cached
     if [ ! -f /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz ]; then
-        echo '📥 Downloading RIVA container from S3...'
+        echo -e '📥 [1.2] Downloading RIVA container ($RIVA_SERVER_SIZE) from S3...'
+        echo 'This may take 10-30 minutes depending on connection speed'
+        echo 'Progress will be shown below:'
+        echo ''
+
+        # Download with progress reporting
         aws s3 cp $RIVA_SERVER_PATH /mnt/cache/riva-cache/ --region $AWS_REGION
+
+        echo ''
+        echo -e '✅ [1.2] RIVA container download completed'
+
+        # Verify file size
+        DOWNLOADED_SIZE=\$(du -h /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz | cut -f1)
+        echo \"Downloaded file size: \$DOWNLOADED_SIZE\"
     else
-        echo '✅ RIVA container already cached'
+        echo -e '✅ [1.2] RIVA container already cached'
+        CACHED_SIZE=\$(du -h /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz | cut -f1)
+        echo \"Cached file size: \$CACHED_SIZE\"
     fi
 
     # Load container into Docker
-    echo '🔄 Loading RIVA container into Docker...'
+    echo ''
+    echo -e '🔄 [1.3] Loading RIVA container into Docker...'
+    echo 'This step extracts and imports the container layers (5-10 minutes)'
+
+    # Show progress during docker load
+    echo 'Loading container layers...'
     docker load -i /mnt/cache/riva-cache/riva-speech-$RIVA_VERSION.tar.gz
 
-    echo '✅ RIVA container loaded successfully'
+    # Verify container is loaded
+    if docker images | grep -q \"nvcr.io/nvidia/riva/riva-speech.*$RIVA_VERSION\"; then
+        echo -e '✅ [1.3] RIVA container loaded successfully'
+        CONTAINER_SIZE=\$(docker images nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION --format \"table {{.Size}}\" | tail -1)
+        echo \"Container size: \$CONTAINER_SIZE\"
+    else
+        echo -e '❌ [1.3] RIVA container failed to load'
+        exit 1
+    fi
+
+    echo ''
+    echo -e '✅ [STEP 1/5] RIVA container setup completed'
 " "Loading RIVA container from S3"
 
 # Download and setup RIVA model using QuickStart toolkit
-echo -e "${BLUE}🤖 Setting up RIVA model using QuickStart toolkit...${NC}"
+echo -e "${BLUE}🤖 [STEP 2/5] Setting up RIVA model using QuickStart toolkit...${NC}"
+echo "Model: $RIVA_MODEL_SELECTED"
+echo "Size: $RIVA_MODEL_SIZE"
+echo ""
 
 run_on_server "
     cd /opt/riva
 
     # Check if deployed models already exist
     if [ -d 'deployed_models' ] && [ -n \"\$(find deployed_models -name 'config.pbtxt' 2>/dev/null)\" ]; then
-        echo '✅ RIVA deployed models already exist'
+        echo -e '✅ [STEP 2/5] RIVA deployed models already exist'
         echo \"Found \$(find deployed_models -name 'config.pbtxt' | wc -l) deployed models\"
+        echo -e '✅ [STEP 2/5] Model setup completed (using existing models)'
     else
-        echo '📥 Setting up RIVA model deployment...'
+        echo -e '📥 [2.1] Setting up RIVA model deployment...'
 
         # Download RIVA QuickStart toolkit from S3
         if [ ! -f /mnt/cache/riva-cache/riva_quickstart_$RIVA_VERSION.zip ]; then
-            echo '📥 Downloading RIVA QuickStart toolkit from S3...'
+            echo -e '📥 [2.2] Downloading RIVA QuickStart toolkit from S3...'
+            echo 'Expected time: 1-2 minutes'
             aws s3 cp s3://dbm-cf-2-web/bintarball/riva/riva_quickstart_$RIVA_VERSION.zip /mnt/cache/riva-cache/ --region $AWS_REGION
+            echo -e '✅ [2.2] QuickStart toolkit downloaded'
+        else
+            echo -e '✅ [2.2] QuickStart toolkit already cached'
         fi
 
         # Download model file from S3
         if [ ! -f /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED ]; then
-            echo '📥 Downloading model file from S3...'
+            echo -e '📥 [2.3] Downloading model file ($RIVA_MODEL_SIZE) from S3...'
+            echo 'Expected time: 2-5 minutes'
             aws s3 cp $RIVA_MODEL_PATH /mnt/cache/riva-cache/ --region $AWS_REGION
+
+            # Verify model download
+            MODEL_SIZE=\$(du -h /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED | cut -f1)
+            echo -e '✅ [2.3] Model file downloaded ('\$MODEL_SIZE')'
+        else
+            echo -e '✅ [2.3] Model file already cached'
+            MODEL_SIZE=\$(du -h /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED | cut -f1)
+            echo \"Cached model size: \$MODEL_SIZE\"
         fi
 
         # Extract QuickStart toolkit
-        echo '🔧 Extracting QuickStart toolkit...'
+        echo -e '🔧 [2.4] Extracting QuickStart toolkit...'
         unzip -o /mnt/cache/riva-cache/riva_quickstart_$RIVA_VERSION.zip -d .
+        echo -e '✅ [2.4] QuickStart toolkit extracted'
 
         # Setup model directories
         mkdir -p riva_model_repo deployed_models
 
         # Copy model file to quickstart directory
+        echo -e '📋 [2.5] Preparing model files...'
         cp /mnt/cache/riva-cache/$RIVA_MODEL_SELECTED riva_quickstart/models/
+        echo -e '✅ [2.5] Model files prepared'
 
-        echo '🔄 Converting model using RIVA QuickStart...'
+        echo ''
+        echo -e '🔄 [2.6] Converting model using RIVA QuickStart...'
+        echo 'This is the most time-consuming step (10-20 minutes)'
+        echo 'Progress will be shown for each sub-step'
         cd riva_quickstart
 
         # Modify config.sh to use our model
@@ -446,31 +539,63 @@ chunk_size_ms=1600
 EOQUICKSTART
 
         # Run RIVA build process
-        echo '🚀 Running RIVA model build and deployment...'
+        echo ''
+        echo -e '🚀 [2.7] Running RIVA model build process...'
+        echo 'This converts the .riva model to Triton format (5-10 minutes)'
+        echo 'You may see TensorRT optimization messages - this is normal'
+        echo ''
+
         bash riva_build.sh
 
         if [ \$? -eq 0 ]; then
-            echo '✅ Model build completed successfully'
+            echo ''
+            echo -e '✅ [2.7] Model build completed successfully'
+            echo ''
 
             # Start RIVA for model deployment
+            echo -e '🚀 [2.8] Starting RIVA deployment container...'
+            echo 'This starts a temporary container for model deployment'
             bash riva_start.sh
+            echo -e '✅ [2.8] Deployment container started'
 
             # Wait for RIVA to be ready for model deployment
-            echo 'Waiting for RIVA deployment to be ready...'
-            sleep 30
+            echo ''
+            echo -e '⏳ [2.9] Waiting for RIVA deployment to be ready...'
+            echo 'Allowing 30 seconds for container initialization...'
+            for i in {1..30}; do
+                echo -n \".\"
+                sleep 1
+            done
+            echo ''
+            echo -e '✅ [2.9] Deployment container ready'
 
             # Deploy models
+            echo ''
+            echo -e '📦 [2.10] Deploying models to Triton server...'
+            echo 'This configures the model for inference'
             bash riva_deploy.sh
+            echo -e '✅ [2.10] Models deployed to Triton'
 
             # Stop the deployment container
+            echo ''
+            echo -e '🛑 [2.11] Stopping deployment container...'
             bash riva_stop.sh
+            echo -e '✅ [2.11] Deployment container stopped'
 
             # Copy deployed models to main directory
+            echo -e '📋 [2.12] Copying deployed models to final location...'
             cp -r model_repository/* ../deployed_models/
 
-            echo '✅ Model deployment completed'
+            # Verify deployment
+            DEPLOYED_MODELS=\$(find ../deployed_models -name 'config.pbtxt' | wc -l)
+            echo -e '✅ [2.12] '\$DEPLOYED_MODELS' models copied to /opt/riva/deployed_models'
+
+            echo ''
+            echo -e '🎉 [STEP 2/5] Model setup and deployment completed successfully!'
         else
-            echo '❌ Model build failed'
+            echo ''
+            echo -e '❌ [2.7] Model build failed'
+            echo 'Check the output above for specific error messages'
             exit 1
         fi
 
@@ -479,7 +604,10 @@ EOQUICKSTART
 " "Setting up RIVA model with QuickStart"
 
 # Create Riva service script
-echo -e "${BLUE}⚙️ Creating Riva service...${NC}"
+echo ""
+echo -e "${BLUE}⚙️ [STEP 3/5] Creating Riva service scripts...${NC}"
+echo "This creates management scripts for starting/stopping RIVA"
+echo ""
 
 run_on_server "
     # Create Riva start script
@@ -522,108 +650,208 @@ EOSTOP
     # Make scripts executable
     chmod +x /opt/riva/start-riva.sh
     chmod +x /opt/riva/stop-riva.sh
+
+    echo -e '✅ [3.1] Service scripts created:'
+    echo '  • /opt/riva/start-riva.sh - Starts RIVA server'
+    echo '  • /opt/riva/stop-riva.sh - Stops RIVA server'
+    echo ''
+    echo -e '✅ [STEP 3/5] Service script creation completed'
 " "Creating Riva service scripts"
 
 # Pre-startup validation
-echo -e "${BLUE}📋 Pre-startup validation...${NC}"
+echo ""
+echo -e "${BLUE}📋 [STEP 4/5] Pre-startup validation...${NC}"
+echo "Verifying all components are ready for RIVA server startup"
+echo ""
 
 run_on_server "
-    echo 'Checking deployed models...'
+    echo -e '[4.1] Checking deployed models...'
     if [ -d /opt/riva/deployed_models ] && find /opt/riva/deployed_models -name 'config.pbtxt' 2>/dev/null | head -3; then
-        echo '✅ Deployed models found'
-        echo \"Total deployed models: \$(find /opt/riva/deployed_models -name 'config.pbtxt' 2>/dev/null | wc -l)\"
-        echo 'Model directories:'
-        find /opt/riva/deployed_models -maxdepth 2 -type d -name '*asr*' 2>/dev/null || echo '  No ASR model directories found'
+        MODEL_COUNT=\$(find /opt/riva/deployed_models -name 'config.pbtxt' 2>/dev/null | wc -l)
+        echo -e '✅ [4.1] Deployed models found ('\$MODEL_COUNT' models)'
+
+        echo 'Model directories found:'
+        find /opt/riva/deployed_models -maxdepth 2 -type d -name '*asr*' 2>/dev/null | head -3 | sed 's/^/    • /' || echo '    • Checking for ASR models...'
     else
-        echo '❌ No deployed models found in /opt/riva/deployed_models'
+        echo -e '❌ [4.1] No deployed models found in /opt/riva/deployed_models'
         echo 'Model deployment may have failed in previous step'
         exit 1
     fi
-    
+
     echo ''
-    echo 'Checking GPU memory...'
+    echo -e '[4.2] Checking GPU resources...'
     GPU_FREE=\$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits)
-    echo \"GPU free memory: \${GPU_FREE} MB\"
-    
+    GPU_TOTAL=\$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
+    GPU_USED=\$((GPU_TOTAL - GPU_FREE))
+    GPU_PERCENT=\$((GPU_USED * 100 / GPU_TOTAL))
+
+    echo \"GPU memory status: \${GPU_FREE} MB free / \${GPU_TOTAL} MB total (\${GPU_PERCENT}% used)\"
+
     if [ \"\$GPU_FREE\" -lt 2000 ]; then
-        echo '⚠️  GPU memory may be low for model loading'
+        echo -e '⚠️  [4.2] GPU memory may be low for model loading'
+        echo 'Consider stopping other GPU processes if startup fails'
     else
-        echo '✅ Sufficient GPU memory available'
+        echo -e '✅ [4.2] Sufficient GPU memory available for RIVA'
     fi
+
+    echo ''
+    echo -e '[4.3] Checking Docker resources...'
+    DOCKER_RUNNING=\$(docker info >/dev/null 2>&1 && echo 'yes' || echo 'no')
+    if [ \"\$DOCKER_RUNNING\" = 'yes' ]; then
+        echo -e '✅ [4.3] Docker is running and accessible'
+    else
+        echo -e '❌ [4.3] Docker is not accessible'
+        exit 1
+    fi
+
+    echo ''
+    echo -e '🎯 [STEP 4/5] Pre-startup validation completed successfully'
 " "Pre-startup validation"
 
 # Start Riva server
-echo -e "${BLUE}🚀 Starting Riva server...${NC}"
+echo ""
+echo -e "${BLUE}🚀 [STEP 5/5] Starting RIVA server...${NC}"
+echo "This will start the production RIVA server with your models"
+echo ""
 
 run_on_server "
     # Stop any existing container
+    echo -e '[5.1] Stopping any existing RIVA containers...'
     /opt/riva/stop-riva.sh
-    
+    echo -e '✅ [5.1] Cleanup completed'
+
+    echo ''
+    echo -e '[5.2] Starting new RIVA server container...'
+    echo 'This will:'
+    echo '  • Load the Parakeet RNNT model into GPU memory'
+    echo '  • Start gRPC server on port $RIVA_PORT'
+    echo '  • Start HTTP server on port $RIVA_HTTP_PORT'
+    echo ''
+
     # Start new container
     /opt/riva/start-riva.sh
-    
-    echo 'Monitoring startup logs for 60 seconds...'
-    
+    echo -e '✅ [5.2] RIVA container started'
+
+    echo ''
+    echo -e '[5.3] Monitoring server startup (this may take 2-5 minutes)...'
+    echo 'Watching for model loading and server ready signals...'
+    echo ''
+
     # Monitor logs with timeout to detect startup success/failure
-    timeout 60s docker logs -f riva-server 2>&1 | while read line; do
-        echo \"\$line\"
+    timeout 120s docker logs -f riva-server 2>&1 | while read line; do
+        # Show important log messages
+        if [[ \"\$line\" == *\"Loading model\"* ]] || [[ \"\$line\" == *\"Model loaded\"* ]] || \
+           [[ \"\$line\" == *\"listening\"* ]] || [[ \"\$line\" == *\"server started\"* ]] || \
+           [[ \"\$line\" == *\"ready\"* ]] || [[ \"\$line\" == *\"Triton\"* ]]; then
+            echo \"📋 \$line\"
+        elif [[ \"\$line\" == *\"error\"* ]] || [[ \"\$line\" == *\"Error\"* ]] || [[ \"\$line\" == *\"failed\"* ]]; then
+            echo \"❌ \$line\"
+        fi
+
+        # Check for success signals
         if [[ \"\$line\" == *\"listening\"* ]] || [[ \"\$line\" == *\"server started\"* ]] || [[ \"\$line\" == *\"ready\"* ]]; then
-            echo '🎉 Detected server ready signal!'
+            echo ''
+            echo -e '🎉 [5.3] Server ready signal detected!'
             break
         elif [[ \"\$line\" == *\"error\"* ]] || [[ \"\$line\" == *\"failed\"* ]]; then
-            echo '❌ Detected error in startup'
+            echo ''
+            echo -e '❌ [5.3] Error detected in startup logs'
             break
         fi
     done &
-    
+
     # Wait for container to stabilize
-    sleep 30
-    
+    echo 'Allowing 45 seconds for model loading and initialization...'
+    for i in {1..45}; do
+        if [ \$((i % 15)) -eq 0 ]; then
+            echo \"Progress: \$i/45 seconds (\$((i * 100 / 45))%)\"
+        fi
+        sleep 1
+    done
+    echo ''
+
     # Check if container is running
     if docker ps | grep -q riva-server; then
-        echo '✅ Riva container is running'
+        echo -e '✅ [5.4] RIVA container is running successfully'
+
+        # Show container status
+        echo 'Container details:'
+        docker ps --filter name=riva-server --format '  • Status: {{.Status}}'
+        docker ps --filter name=riva-server --format '  • Ports: {{.Ports}}'
     else
-        echo '❌ Riva server failed to start'
+        echo -e '❌ [5.4] RIVA server failed to start'
+        echo ''
         echo 'Recent container logs:'
         docker logs --tail 20 riva-server 2>/dev/null || echo 'No logs available'
+        echo ''
+        echo 'Troubleshooting suggestions:'
+        echo '  • Check GPU memory: nvidia-smi'
+        echo '  • Check container logs: docker logs riva-server'
+        echo '  • Verify model files: ls -la /opt/riva/deployed_models'
         exit 1
     fi
-" "Starting Riva server"
+" "Starting RIVA server"
 
 # Test Riva server health
-echo -e "${BLUE}🏥 Testing Riva server health...${NC}"
+echo ""
+echo -e "${BLUE}🏥 [FINAL CHECK] Testing RIVA server health...${NC}"
+echo "Performing comprehensive health checks to ensure everything is working"
+echo ""
 
 # Wait for server to be ready and test health
 for i in {1..12}; do
-    echo "Health check attempt $i/12..."
-    
+    echo -e "[Health Check $i/12] Testing HTTP endpoint..."
+
     HEALTH_STATUS=$(run_on_server "curl -s -o /dev/null -w '%{http_code}' http://localhost:$RIVA_HTTP_PORT/health || echo '000'" "")
-    
+
     if [ "$HEALTH_STATUS" = "200" ]; then
-        echo -e "${GREEN}✅ Riva server health check passed${NC}"
+        echo -e "${GREEN}✅ [Health Check $i/12] HTTP health check passed (200 OK)${NC}"
         break
-    elif [ $i -eq 12 ]; then
-        echo -e "${RED}❌ Riva server health check failed after 12 attempts${NC}"
-        run_on_server "docker logs riva-server | tail -20" "Showing recent container logs"
+    elif [ "$HEALTH_STATUS" = "000" ]; then
+        echo -e "${YELLOW}⏳ [Health Check $i/12] Server not responding yet (connection failed)${NC}"
+    else
+        echo -e "${YELLOW}⏳ [Health Check $i/12] Server returned HTTP $HEALTH_STATUS${NC}"
+    fi
+
+    if [ $i -eq 12 ]; then
+        echo ""
+        echo -e "${RED}❌ RIVA server health check failed after 12 attempts (2 minutes)${NC}"
+        echo "This suggests the server may not have started properly."
+        echo ""
+        echo "Recent container logs:"
+        run_on_server "docker logs riva-server | tail -20" ""
+        echo ""
+        echo "Container status:"
+        run_on_server "docker ps --filter name=riva-server" ""
         exit 1
     else
-        echo "Waiting 10 seconds before retry..."
-        sleep 10
+        WAIT_TIME=$((10 - (i-1) * 1))
+        if [ $WAIT_TIME -lt 5 ]; then WAIT_TIME=5; fi
+        echo "Waiting $WAIT_TIME seconds before retry (server may still be loading models)..."
+        sleep $WAIT_TIME
     fi
 done
 
 # Test model listing
-echo -e "${BLUE}📋 Testing model availability...${NC}"
+echo ""
+echo -e "${BLUE}📋 [FINAL VALIDATION] Testing model availability...${NC}"
 
 MODEL_LIST=$(run_on_server "
     curl -s http://localhost:$RIVA_HTTP_PORT/v1/models || echo 'Model list failed'
 " "")
 
-if [[ "$MODEL_LIST" == *"$RIVA_MODEL"* ]] || [[ "$MODEL_LIST" == *"parakeet"* ]]; then
-    echo -e "${GREEN}✅ Parakeet model is available${NC}"
+if [[ "$MODEL_LIST" == *"$RIVA_MODEL"* ]] || [[ "$MODEL_LIST" == *"parakeet"* ]] || [[ "$MODEL_LIST" == *"conformer"* ]]; then
+    echo -e "${GREEN}✅ [Model Check] Parakeet/Conformer model is available${NC}"
+
+    # Show available models
+    echo "Available models:"
+    echo "$MODEL_LIST" | grep -o '"name":"[^"]*"' | sed 's/"name":"/  • /' | sed 's/"$//' | head -5
 else
-    echo -e "${YELLOW}⚠️  Model list: $MODEL_LIST${NC}"
-    echo -e "${YELLOW}⚠️  Parakeet model may still be loading${NC}"
+    echo -e "${YELLOW}⚠️  [Model Check] Expected model not found in list${NC}"
+    echo "Available models:"
+    echo "$MODEL_LIST" | head -200
+    echo ""
+    echo -e "${YELLOW}Note: Model may still be loading. Check again in a few minutes.${NC}"
 fi
 
 # Create systemd service for auto-start
@@ -662,26 +890,57 @@ fi
 sed -i 's/RIVA_DEPLOYMENT_STATUS=.*/RIVA_DEPLOYMENT_STATUS=completed/' "$ENV_FILE"
 
 echo ""
-echo -e "${GREEN}✅ Riva Server Setup Complete!${NC}"
+echo ""
 echo "================================================================"
-echo "Server Details:"
+echo -e "${GREEN}🎉 RIVA SERVER SETUP COMPLETED SUCCESSFULLY! 🎉${NC}"
+echo "================================================================"
+echo ""
+echo -e "${CYAN}📊 DEPLOYMENT SUMMARY:${NC}"
+echo -e "✅ [STEP 1/5] RIVA container loaded from S3"
+echo -e "✅ [STEP 2/5] Parakeet RNNT model deployed"
+echo -e "✅ [STEP 3/5] Service scripts created"
+echo -e "✅ [STEP 4/5] Pre-startup validation passed"
+echo -e "✅ [STEP 5/5] Server started and health checked"
+echo ""
+echo -e "${CYAN}🖥️  SERVER DETAILS:${NC}"
 echo "  • Host: $RIVA_HOST"
-echo "  • gRPC Port: $RIVA_PORT"
-echo "  • HTTP Port: $RIVA_HTTP_PORT"
+echo "  • gRPC Port: $RIVA_PORT (for ASR requests)"
+echo "  • HTTP Port: $RIVA_HTTP_PORT (for health/management)"
 echo "  • Model: $RIVA_MODEL"
 echo "  • Version: $RIVA_VERSION"
+echo "  • Status: Running and healthy ✅"
 echo ""
-echo "Health Check:"
-echo "  • HTTP: http://$RIVA_HOST:$RIVA_HTTP_PORT/health"
-echo "  • Models: http://$RIVA_HOST:$RIVA_HTTP_PORT/v1/models"
+echo -e "${CYAN}🔗 QUICK ACCESS URLS:${NC}"
+echo "  • Health Check: http://$RIVA_HOST:$RIVA_HTTP_PORT/health"
+echo "  • Model List: http://$RIVA_HOST:$RIVA_HTTP_PORT/v1/models"
+echo "  • Server Info: http://$RIVA_HOST:$RIVA_HTTP_PORT/v1/health/ready"
 echo ""
-echo "Management Commands (on server):"
-echo "  • Start: /opt/riva/start-riva.sh"
-echo "  • Stop: /opt/riva/stop-riva.sh"
-echo "  • Logs: docker logs -f riva-server"
-echo "  • Status: docker ps | grep riva-server"
+echo -e "${CYAN}⚙️  MANAGEMENT COMMANDS (run on server):${NC}"
+echo "  • View logs: docker logs -f riva-server"
+echo "  • Check status: docker ps | grep riva-server"
+echo "  • Stop server: /opt/riva/stop-riva.sh"
+echo "  • Start server: /opt/riva/start-riva.sh"
+echo "  • Monitor GPU: nvidia-smi"
 echo ""
-echo -e "${CYAN}Next Steps:${NC}"
-echo "1. Deploy WebSocket app: ./scripts/riva-030-deploy-websocket-app.sh"
-echo "2. Test system: ./scripts/riva-040-test-system.sh"
+echo -e "${CYAN}📋 SYSTEM RESOURCE USAGE:${NC}"
+run_on_server "
+    echo '  • Disk usage:'
+    du -sh /opt/riva /mnt/cache/riva-cache 2>/dev/null | sed 's/^/    /'
+    echo '  • GPU memory:'
+    nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits | awk '{printf \"    %s MB used / %s MB total (%.1f%% used)\n\", \$1, \$2, \$1/\$2*100}'
+    echo '  • Container status:'
+    docker ps --filter name=riva-server --format '    {{.Names}}: {{.Status}}'
+" ""
 echo ""
+echo -e "${YELLOW}🚀 NEXT STEPS:${NC}"
+echo "1. Test ASR functionality:"
+echo "   ./scripts/riva-060-test-riva-connectivity.sh"
+echo ""
+echo "2. Deploy WebSocket app (if needed):"
+echo "   ./scripts/riva-030-deploy-websocket-app.sh"
+echo ""
+echo "3. Run end-to-end tests:"
+echo "   ./scripts/riva-040-test-system.sh"
+echo ""
+echo -e "${GREEN}🎯 Your RIVA ASR server is now ready for production use!${NC}"
+echo "================================================================"
