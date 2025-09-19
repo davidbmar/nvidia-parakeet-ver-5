@@ -29,6 +29,32 @@ fi
 # Source configuration
 source "$ENV_FILE"
 
+# Auto-detect GPU instance if needed
+if [ "$RIVA_HOST" = "auto_detected" ]; then
+    echo -e "${CYAN}🔍 Auto-detecting GPU instance...${NC}"
+
+    # Check for running GPU instances
+    GPU_INSTANCES=$(aws ec2 describe-instances \
+        --region "${AWS_REGION}" \
+        --filters "Name=instance-state-name,Values=running" "Name=instance-type,Values=g4dn.xlarge" \
+        --query 'Reservations[].Instances[].[InstanceId,PublicIpAddress,InstanceType]' \
+        --output text 2>/dev/null)
+
+    if [ -n "$GPU_INSTANCES" ]; then
+        DETECTED_IP=$(echo "$GPU_INSTANCES" | head -1 | awk '{print $2}')
+        DETECTED_ID=$(echo "$GPU_INSTANCES" | head -1 | awk '{print $1}')
+        echo -e "${GREEN}✅ Found running GPU instance: $DETECTED_IP ($DETECTED_ID)${NC}"
+        RIVA_HOST="$DETECTED_IP"
+        # Update GPU_INSTANCE_ID for potential EC2 Instance Connect
+        GPU_INSTANCE_ID="$DETECTED_ID"
+    else
+        echo -e "${RED}❌ No running GPU instances found${NC}"
+        echo "You need to deploy a GPU instance first:"
+        echo "  ./scripts/riva-015-deploy-or-restart-aws-gpu-instance.sh"
+        exit 1
+    fi
+fi
+
 echo "Configuration:"
 echo "  • Deployment Strategy: $DEPLOYMENT_STRATEGY"
 echo "  • Riva Host: $RIVA_HOST"

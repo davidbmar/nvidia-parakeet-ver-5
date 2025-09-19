@@ -567,9 +567,24 @@ case $GPU_INSTANCE_TYPE in
 esac
 echo ""
 echo -e "${CYAN}Next Steps:${NC}"
-echo "1. Configure security groups: ./scripts/riva-020-configure-aws-security-groups.sh"
-echo "2. Setup NIM prerequisites: ./scripts/riva-022-setup-nim-prerequisites.sh"
-echo "3. Prepare environment: ./scripts/riva-045-setup-docker-nvidia-toolkit-create-directories-for-container-deployment.sh"
-echo "4. Deploy NIM container: ./scripts/riva-062-deploy-nim-parakeet-ctc-1.1b-asr-T4-optimized.sh"
-echo "5. Deploy WebSocket app: ./scripts/riva-090-deploy-websocket-asr-application.sh"
+
+# Check deployment approach from .env
+if [ "$USE_RIVA_DEPLOYMENT" = "true" ]; then
+    echo "📍 RIVA Deployment Next Steps:"
+    echo "1. Configure security groups: ./scripts/riva-020-configure-aws-security-groups-enhanced.sh"
+    echo "2. Setup RIVA server: ./scripts/riva-070-setup-traditional-riva-server.sh"
+    echo "3. Start RIVA server: ./scripts/riva-085-start-traditional-riva-server.sh"
+    echo "4. Deploy WebSocket app: ./scripts/riva-070-deploy-websocket-server.sh"
+elif [ "$USE_NIM_DEPLOYMENT" = "true" ]; then
+    echo "📍 NIM Deployment Next Steps:"
+    echo "1. Configure security groups: ./scripts/riva-020-configure-aws-security-groups-enhanced.sh"
+    echo "2. Setup NIM prerequisites: ./scripts/riva-022-setup-nim-prerequisites.sh"
+    echo "3. Prepare environment: ./scripts/riva-045-setup-docker-nvidia-toolkit-create-directories-for-container-deployment.sh"
+    echo "4. Deploy NIM container: ./scripts/riva-062-deploy-nim-from-s3.sh"
+    echo "5. Deploy WebSocket app: ./scripts/riva-070-deploy-websocket-server.sh"
+else
+    echo "1. Configure security groups: ./scripts/riva-020-configure-aws-security-groups-enhanced.sh"
+    echo "2. Run deployment discovery: ./scripts/riva-007-discover-s3-models.sh"
+    echo "3. Follow the deployment approach selected in step 2"
+fi
 echo ""
