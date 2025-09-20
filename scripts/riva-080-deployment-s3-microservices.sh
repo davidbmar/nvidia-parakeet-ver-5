@@ -27,7 +27,7 @@ trap 'echo "[ERROR] Script failed at line $LINENO. Check logs for details." >&2'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check prerequisites for new users
-echo "🚀 RIVA-070 Tiny Functions - S3-First Deployment"
+echo "🚀 RIVA-080 Deployment S3 Microservices - RIVA 2.15.0"
 echo "=================================================="
 echo ""
 
@@ -61,7 +61,7 @@ fi
 
 echo "✅ Environment validated"
 echo "   Host: ${RIVA_HOST}"
-echo "   Log location: /tmp/riva-070-tiny-functions-*.log"
+echo "   Log location: /tmp/riva-080-deployment-s3-microservices-*.log"
 echo ""
 
 # Extract RIVA_VERSION from RIVA_SERVER_SELECTED
@@ -76,10 +76,10 @@ else
 fi
 
 # Set up comprehensive logging
-LOG_FILE="/tmp/riva-070-tiny-functions-$(date +%Y%m%d-%H%M%S).log"
+LOG_FILE="/tmp/riva-080-deployment-s3-microservices-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG_FILE")
 exec 2>&1
-echo "[$(date)] LOG: Starting RIVA-070 Tiny Functions execution - Log file: $LOG_FILE"
+echo "[$(date)] LOG: Starting RIVA-080 Deployment execution - Log file: $LOG_FILE"
 
 # Colors for output (ASCII only - no emoji)
 RED='\033[0;31m'
@@ -146,7 +146,63 @@ ssh_check_cache() {
     echo "$cache_status"
 }
 
-# Function 2: Download QuickStart toolkit if missing
+# Function 2: Load RIVA container from S3 (new S3-first approach)
+ssh_load_riva_container() {
+    log_ssh_step "CONTAINER" "Loading RIVA container from S3 cache"
+
+    local result
+    result=$(run_remote "
+        echo '[SSH LOG] Starting RIVA container S3-first loading'
+
+        # Check if container already exists
+        if docker images nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} | grep -q ${RIVA_VERSION}; then
+            echo '[SSH LOG] RIVA container already loaded'
+            echo 'CONTAINER_EXISTS'
+            exit 0
+        fi
+
+        echo '[SSH LOG] Checking for S3-cached container'
+        S3_CONTAINER_PATH='${RIVA_SERVER_PATH}'
+        CONTAINER_FILE=\$(basename \$S3_CONTAINER_PATH)
+
+        cd /mnt/cache/riva-cache/
+
+        if [ ! -f \"\$CONTAINER_FILE\" ]; then
+            echo '[SSH LOG] Downloading RIVA container from S3...'
+            aws s3 cp \"\$S3_CONTAINER_PATH\" . --region ${AWS_REGION}
+        else
+            echo '[SSH LOG] S3-cached container found locally'
+        fi
+
+        if [ -f \"\$CONTAINER_FILE\" ]; then
+            echo '[SSH LOG] Loading container into Docker...'
+            echo '[SSH LOG] PROGRESS: Loading \$CONTAINER_FILE (this may take 2-3 minutes)'
+            if docker load < \"\$CONTAINER_FILE\"; then
+                echo '[SSH LOG] Container loaded successfully'
+                # Tag properly if needed
+                if ! docker images nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} | grep -q ${RIVA_VERSION}; then
+                    echo '[SSH LOG] Tagging container...'
+                    LOADED_IMAGE=\$(docker images --format '{{.Repository}}:{{.Tag}}' | grep riva-speech | head -1)
+                    docker tag \"\$LOADED_IMAGE\" nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION}
+                fi
+                echo 'CONTAINER_SUCCESS'
+            else
+                echo '[SSH LOG] Container loading failed'
+                echo 'CONTAINER_FAILED'
+            fi
+        else
+            echo '[SSH LOG] Container file not found - falling back to docker pull'
+            docker pull nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION}
+            echo 'CONTAINER_PULLED'
+        fi
+    ") || return 1
+
+    local container_status=$(echo "$result" | tail -n 1)
+    log_ssh_success "Container loading: $container_status"
+    echo "$container_status"
+}
+
+# Function 3: Download QuickStart toolkit if missing
 ssh_download_quickstart() {
     log_ssh_step "DOWNLOAD" "Downloading QuickStart toolkit from S3"
 
@@ -214,19 +270,43 @@ ssh_extract_toolkit() {
 
     local result
     result=$(run_remote "
-        echo '[SSH LOG] Starting toolkit extraction'
-        cd /opt/riva
+        echo '[SSH LOG] Starting toolkit extraction from RIVA container'
 
-        # Clean up any existing extraction
-        if [ -d 'riva_quickstart_${RIVA_VERSION}' ]; then
-            echo '[SSH LOG] Removing existing extraction'
-            rm -rf 'riva_quickstart_${RIVA_VERSION}'
+        # Create the directory
+        mkdir -p /opt/riva/riva_quickstart_${RIVA_VERSION}
+        cd /opt/riva/riva_quickstart_${RIVA_VERSION}
+
+        echo '[SSH LOG] Extracting QuickStart from container'
+        # Extract QuickStart toolkit from the container
+        if docker run --rm nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} ls /opt/riva/ | grep -q riva_; then
+            echo '[SSH LOG] Found QuickStart in container, extracting...'
+            docker run --rm nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} tar -czf - -C /opt/riva . | tar -xzf -
+        else
+            echo '[SSH LOG] Using minimal setup for RIVA 2.15.0'
+            # For 2.15.0, create basic files needed
+            docker run --rm nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} cat > config.sh << 'EOFCONFIG'
+#!/bin/bash
+# Basic RIVA 2.15.0 configuration
+service_enabled_asr=true
+service_enabled_nlp=false
+service_enabled_tts=false
+EOFCONFIG
+
+            # Create a basic start script
+            cat > riva_start.sh << 'EOFSTART'
+#!/bin/bash
+echo "Starting RIVA 2.15.0 with model repository: $(pwd)/riva-model-repo"
+docker run --gpus all --rm -d --name riva-speech \\
+  -p 50051:50051 -p 8000:8000 \\
+  -v "$(pwd)/riva-model-repo:/opt/tritonserver/models" \\
+  nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} \\
+  start-riva --riva-uri=0.0.0.0:50051 --asr_service=true --nlp_service=false --tts_service=false --model-repository=/opt/tritonserver/models
+EOFSTART
+            chmod +x riva_start.sh
         fi
 
-        echo '[SSH LOG] Extracting toolkit zip'
-        unzip -q /mnt/cache/riva-cache/riva_quickstart_${RIVA_VERSION}.zip
-
-        if [ -d 'riva_quickstart_${RIVA_VERSION}' ]; then
+        # Verify essential files exist
+        if [ -f 'config.sh' ] || [ -f 'riva_start.sh' ]; then
             echo '[SSH LOG] Extraction successful'
             echo 'EXTRACT_SUCCESS'
         else
@@ -309,10 +389,10 @@ ssh_build_model() {
                 echo '=== MILESTONE: S3 CACHE COPY COMPLETE ==='
                 echo '[SSH LOG] DETAILED: Skipping NGC download - using S3-cached model directly'
                 echo '[SSH LOG] DETAILED: This approach avoids NGC API key requirements'
-                echo '[SSH LOG] DETAILED: Creating deployed_models directory structure'
+                echo '[SSH LOG] DETAILED: Creating riva-model-repo directory structure'
 
-                # Create the deployed_models directory that RIVA server expects
-                mkdir -p deployed_models/models
+                # Create the riva-model-repo directory that RIVA server expects
+                mkdir -p riva-model-repo/models
 
                 echo '[SSH LOG] DETAILED: Model conversion strategy: Try nemo2riva first, fallback to direct copy'
                 echo '[SSH LOG] DETAILED: Checking if nemo2riva tool is available'
@@ -326,7 +406,7 @@ ssh_build_model() {
                         echo '[SSH LOG] DETAILED: nemo2riva installation successful'
                         echo '[SSH LOG] DETAILED: Converting .riva model to deployed format'
                         echo '[SSH LOG] DETAILED: Source: models/${RIVA_MODEL_SELECTED}'
-                        echo '[SSH LOG] DETAILED: Target: deployed_models/models/'
+                        echo '[SSH LOG] DETAILED: Target: riva-model-repo/models/'
                         echo '[SSH LOG] PROGRESS: Model conversion starting (may take 2-5 minutes)...'
 
                         # Use nemo2riva to convert the model properly with better error handling
@@ -341,7 +421,7 @@ try:
     # Convert the .riva file to deployed format
     nemo2riva.deploy_model(
         'models/${RIVA_MODEL_SELECTED}',
-        'deployed_models/models/',
+        'riva-model-repo/models/',
         verbose=True
     )
     print('[PYTHON LOG] Model conversion completed successfully')
@@ -359,12 +439,12 @@ except Exception as e:
 \" 2>&1 | tee -a conversion.log
 
                         conversion_exit_code=\$?
-                        if [ \$conversion_exit_code -eq 0 ] && [ -d 'deployed_models/models' ]; then
+                        if [ \$conversion_exit_code -eq 0 ] && [ -d 'riva-model-repo/models' ]; then
                             echo ''
                             echo '=== MILESTONE: MODEL BUILD COMPLETE (NEMO2RIVA) ==='
                             echo '[SSH LOG] Professional model conversion completed successfully'
-                            echo '[SSH LOG] DETAILED: deployed_models directory created with proper structure'
-                            ls -la deployed_models/models/ 2>/dev/null | head -5
+                            echo '[SSH LOG] DETAILED: riva-model-repo directory created with proper structure'
+                            ls -la riva-model-repo/models/ 2>/dev/null | head -5
                             echo 'BUILD_SUCCESS'
                         else
                             echo '[SSH LOG] DETAILED: nemo2riva conversion failed (exit code: \$conversion_exit_code)'
@@ -378,7 +458,7 @@ except Exception as e:
                 fi
 
                 # Use riva_init.sh with S3 model (proper method)
-                if [ ! -f 'deployed_models/models/config.pbtxt' ]; then
+                if [ ! -f 'riva-model-repo/models/config.pbtxt' ]; then
                     echo '[SSH LOG] DETAILED: Using riva_init.sh with S3-cached model (proper method)'
                     echo '[SSH LOG] DETAILED: This creates the correct Triton model repository structure'
                     echo ''
@@ -398,11 +478,11 @@ except Exception as e:
                     echo '[SSH LOG] DETAILED: This approach is faster and bypasses NGC dependency issues'
 
                     # Create the expected Triton model repository structure
-                    mkdir -p deployed_models/models/asr_model/1
-                    cp 'models/${RIVA_MODEL_SELECTED}' 'deployed_models/models/asr_model/1/model.riva'
+                    mkdir -p riva-model-repo/models/asr_model/1
+                    cp 'models/${RIVA_MODEL_SELECTED}' 'riva-model-repo/models/asr_model/1/model.riva'
 
                     # Create Triton model configuration that works with RIVA server
-                    cat > deployed_models/models/asr_model/config.pbtxt << 'EOL'
+                    cat > riva-model-repo/models/asr_model/config.pbtxt << 'EOL'
 name: "asr_model"
 platform: "ensemble"
 max_batch_size: 8
@@ -428,16 +508,16 @@ output [
 EOL
 
                     # Create model version info
-                    echo "1" > deployed_models/models/asr_model/1/version.txt
+                    echo "1" > riva-model-repo/models/asr_model/1/version.txt
 
                     echo ''
                     echo '=== MILESTONE: DIRECT MODEL BUILD COMPLETE ==='
                     echo '[SSH LOG] Model repository built using direct approach'
-                    if [ -f 'deployed_models/models/asr_model/1/model.riva' ] && [ -f 'deployed_models/models/asr_model/config.pbtxt' ]; then
+                    if [ -f 'riva-model-repo/models/asr_model/1/model.riva' ] && [ -f 'riva-model-repo/models/asr_model/config.pbtxt' ]; then
                         echo '[SSH LOG] DETAILED: Model repository structure created successfully:'
-                        echo '[SSH LOG] FILE: deployed_models/models/asr_model/1/model.riva'
-                        echo '[SSH LOG] FILE: deployed_models/models/asr_model/config.pbtxt'
-                        ls -la deployed_models/models/asr_model/1/ | head -3 | sed 's/^/[SSH LOG] /'
+                        echo '[SSH LOG] FILE: riva-model-repo/models/asr_model/1/model.riva'
+                        echo '[SSH LOG] FILE: riva-model-repo/models/asr_model/config.pbtxt'
+                        ls -la riva-model-repo/models/asr_model/1/ | head -3 | sed 's/^/[SSH LOG] /'
                         echo 'BUILD_SUCCESS'
                     else
                         echo '[SSH LOG] ERROR: Direct build failed - missing required files'
@@ -617,17 +697,29 @@ execute_model_setup_workflow() {
     # Step 1: Check cache
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Checking cache...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Checking cache...${NC}"
     if ! cache_result=$(ssh_check_cache); then
         failed_step="Cache check"
         return 1
     fi
 
-    # Step 2 & 3: Download files if needed
+    # Step 2: Load RIVA container from S3
+    step_count=$((step_count + 1))
+    echo ""
+    echo -e "${BLUE}[STEP $step_count/9] Loading RIVA container...${NC}"
+    echo "SSH COMMAND OUTPUT:"
+    container_result=$(ssh_load_riva_container)
+    echo "SSH RESULT: $container_result"
+    if [[ "$container_result" != *"SUCCESS"* && "$container_result" != *"EXISTS"* && "$container_result" != *"PULLED"* ]]; then
+        failed_step="Container loading"
+        return 1
+    fi
+
+    # Step 3 & 4: Download files if needed
     if [[ "$cache_result" == "CACHE_INCOMPLETE" ]]; then
         step_count=$((step_count + 1))
         echo ""
-        echo -e "${BLUE}[STEP $step_count/8] Downloading QuickStart toolkit...${NC}"
+        echo -e "${BLUE}[STEP $step_count/9] Downloading QuickStart toolkit...${NC}"
         if ! quickstart_result=$(ssh_download_quickstart); then
             failed_step="QuickStart download"
             return 1
@@ -635,7 +727,7 @@ execute_model_setup_workflow() {
 
         step_count=$((step_count + 1))
         echo ""
-        echo -e "${BLUE}[STEP $step_count/8] Downloading model file...${NC}"
+        echo -e "${BLUE}[STEP $step_count/9] Downloading model file...${NC}"
         if ! model_result=$(ssh_download_model); then
             failed_step="Model download"
             return 1
@@ -648,7 +740,7 @@ execute_model_setup_workflow() {
     # Step 4: Extract toolkit
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Extracting QuickStart toolkit...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Extracting QuickStart toolkit...${NC}"
     echo "SSH COMMAND OUTPUT:"
     extract_result=$(ssh_extract_toolkit)
     echo "SSH RESULT: $extract_result"
@@ -660,7 +752,7 @@ execute_model_setup_workflow() {
     # Step 5: Configure model
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Configuring model...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Configuring model...${NC}"
     echo "SSH COMMAND OUTPUT:"
     config_result=$(ssh_configure_model)
     echo "SSH RESULT: $config_result"
@@ -672,7 +764,7 @@ execute_model_setup_workflow() {
     # Step 6: Build model
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Setting up models (S3-first, fast if cached)...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Setting up models (S3-first, fast if cached)...${NC}"
     echo "SSH COMMAND OUTPUT:"
     build_result=$(ssh_build_model)
     echo "SSH RESULT: $build_result"
@@ -684,7 +776,7 @@ execute_model_setup_workflow() {
     # Step 7: Deploy model
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Deploying model...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Deploying model...${NC}"
     echo "SSH COMMAND OUTPUT:"
     deploy_result=$(ssh_deploy_model)
     echo "SSH RESULT: $deploy_result"
@@ -696,7 +788,7 @@ execute_model_setup_workflow() {
     # Step 8: Verify deployment
     step_count=$((step_count + 1))
     echo ""
-    echo -e "${BLUE}[STEP $step_count/8] Verifying deployment...${NC}"
+    echo -e "${BLUE}[STEP $step_count/9] Verifying deployment...${NC}"
     echo "SSH COMMAND OUTPUT:"
     verify_result=$(ssh_verify_deployment)
     echo "SSH RESULT: $verify_result"
