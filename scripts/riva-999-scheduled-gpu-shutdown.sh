@@ -20,7 +20,7 @@ fi
 
 # Configuration
 DELAY_HOURS="${1:-1.5}"
-DELAY_MINUTES=$(echo "$DELAY_HOURS * 60" | bc)
+DELAY_MINUTES=$(echo "$DELAY_HOURS * 60" | bc | cut -d. -f1)
 DELAY_SECONDS=$(echo "$DELAY_MINUTES * 60" | bc | cut -d. -f1)
 GPU_INSTANCE_ID="${GPU_INSTANCE_ID:-}"
 AWS_REGION="${AWS_REGION:-us-east-2}"
@@ -32,7 +32,7 @@ echo "⏰ Shutdown Configuration:"
 echo "   • Delay: $DELAY_HOURS hours ($DELAY_MINUTES minutes)"
 echo "   • Target: GPU Instance $GPU_INSTANCE_ID"
 echo "   • Region: $AWS_REGION"
-echo "   • Scheduled time: $(date -d "+$DELAY_HOURS hours" '+%Y-%m-%d %H:%M:%S')"
+echo "   • Scheduled time: $(date -d "+$DELAY_MINUTES minutes" '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
 # Validate prerequisites
@@ -111,4 +111,4 @@ echo ""
 echo "💡 This control server will remain running - only the GPU instance will be shutdown"
 echo ""
 echo "✅ Scheduled shutdown is now running in background"
-echo "   GPU instance $GPU_INSTANCE_ID will shutdown at: $(date -d "+$DELAY_HOURS hours" '+%Y-%m-%d %H:%M:%S')"
+echo "   GPU instance $GPU_INSTANCE_ID will shutdown at: $(date -d "+$DELAY_MINUTES minutes" '+%Y-%m-%d %H:%M:%S')"
