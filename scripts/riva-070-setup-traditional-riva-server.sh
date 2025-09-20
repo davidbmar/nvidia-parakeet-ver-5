@@ -532,7 +532,7 @@ run_on_server "
         cd "$QUICKSTART_DIR"
 
         # Modify config.sh to use our model
-        MODEL_BASENAME=$(basename "$RIVA_MODEL_SELECTED")
+        MODEL_BASENAME=\$(basename "$RIVA_MODEL_SELECTED")
         cat > config.sh << 'EOQUICKSTART'
 #!/bin/bash
 
@@ -558,7 +558,7 @@ chunk_size_ms=1600
 EOQUICKSTART
 
         # Replace placeholders with actual values
-        sed -i "s/MODEL_FILE_PLACEHOLDER/$MODEL_BASENAME/g" config.sh
+        sed -i "s/MODEL_FILE_PLACEHOLDER/\$MODEL_BASENAME/g" config.sh
         sed -i "s/LANG_CODE_PLACEHOLDER/$RIVA_LANGUAGE_CODE/g" config.sh
 
         # Run RIVA build process
@@ -666,7 +666,7 @@ EOQUICKSTART
 
             # Verify deployment
             DEPLOYED_MODELS=\$(find ../deployed_models -name 'config.pbtxt' | wc -l)
-            echo -e '✅ [2.12] '\$DEPLOYED_MODELS' models copied to /opt/riva/deployed_models'
+            echo -e "✅ [2.12] \$DEPLOYED_MODELS models copied to /opt/riva/deployed_models"
 
             echo ''
             echo -e '🎉 [STEP 2/5] Model setup and deployment completed successfully!'
