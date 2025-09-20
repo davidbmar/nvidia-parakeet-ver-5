@@ -138,7 +138,7 @@ s3://dbm-cf-2-web/bintarball/
 4. Updates: .env with approach-specific configuration
 5. Feeds into:
    - NIM: riva-062-deploy-nim-from-s3.sh
-   - RIVA: riva-070-setup-traditional-riva-server.sh
+   - RIVA: riva-080-deploy-traditional-riva-models.sh
 
 ════════════════════════════════════════════════════════════════════════════
 EOF
@@ -631,7 +631,7 @@ if [[ "$DEPLOYMENT_APPROACH" == "nim" ]]; then
     echo "2. Test NIM: ./scripts/riva-063-monitor-single-model-readiness.sh"
     echo "3. Deploy WebSocket: ./scripts/riva-070-deploy-websocket-server.sh"
 elif [[ "$DEPLOYMENT_APPROACH" == "riva" ]]; then
-    echo "1. Deploy RIVA: ./scripts/riva-070-setup-traditional-riva-server.sh"
+    echo "1. Deploy RIVA: ./scripts/riva-080-deploy-traditional-riva-models.sh"
     echo "2. Start RIVA: ./scripts/riva-085-start-traditional-riva-server.sh"
     echo "3. Deploy WebSocket: ./scripts/riva-070-deploy-websocket-server.sh"
 fi

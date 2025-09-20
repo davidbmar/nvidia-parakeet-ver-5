@@ -93,7 +93,7 @@ mock_ssh_download_quickstart() {
     log_info "MOCK: Downloading QuickStart toolkit from S3"
     sleep 1.0  # Simulate download time
 
-    log_info "MOCK: aws s3 cp s3://dbm-cf-2-web/bintarball/riva/riva_quickstart_${RIVA_VERSION}.zip"
+    log_info "MOCK: aws s3 cp s3://dbm-cf-2-web/bintarball/riva-containers/riva_quickstart_${RIVA_VERSION}.zip"
     log_info "MOCK: Download completed (simulated)"
 
     echo "DOWNLOAD_SUCCESS"
@@ -103,7 +103,7 @@ mock_ssh_download_model() {
     log_info "MOCK: Downloading model file from S3"
     sleep 1.5  # Simulate larger download
 
-    log_info "MOCK: aws s3 cp s3://dbm-cf-2-web/bintarball/models/${RIVA_MODEL_SELECTED}"
+    log_info "MOCK: aws s3 cp s3://dbm-cf-2-web/bintarball/riva-models/conformer/${RIVA_MODEL_SELECTED}"
     log_info "MOCK: Model download completed (simulated)"
 
     echo "DOWNLOAD_SUCCESS"
