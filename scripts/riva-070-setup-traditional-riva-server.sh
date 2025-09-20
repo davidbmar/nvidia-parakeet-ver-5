@@ -462,9 +462,10 @@ run_on_server "
     cd /opt/riva
 
     # Check if deployed models already exist
-    if [ -d 'deployed_models' ] && [ -n \"\$(find deployed_models -name 'config.pbtxt' 2>/dev/null)\" ]; then
+    if [ -d deployed_models ] && find deployed_models -name config.pbtxt 2>/dev/null | grep -q .; then
         echo -e '✅ [STEP 2/5] RIVA deployed models already exist'
-        echo \"Found \$(find deployed_models -name 'config.pbtxt' | wc -l) deployed models\"
+        MODEL_COUNT=\$(find deployed_models -name config.pbtxt | wc -l)
+        echo \"Found \$MODEL_COUNT deployed models\"
         echo -e '✅ [STEP 2/5] Model setup completed (using existing models)'
     else
         echo -e '📥 [2.1] Setting up RIVA model deployment...'
