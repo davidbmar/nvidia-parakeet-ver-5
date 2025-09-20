@@ -709,31 +709,6 @@ run_on_server "
     fi
 " "Setting up RIVA model with QuickStart"
 
-# Load tiny SSH functions library
-source "${SCRIPT_DIR}/riva-070-tiny-functions.sh"
-
-# Execute model setup using tiny functions
-echo ""
-echo -e "${BLUE}🤖 [STEP 2/5] Setting up RIVA model using tiny functions...${NC}"
-echo "Model: ${RIVA_MODEL_SELECTED}"
-echo "Size: ${RIVA_MODEL_SIZE}"
-echo ""
-
-# Execute the tiny function workflow (replaces 250-line monolithic SSH command)
-if ! execute_model_setup_workflow; then
-    echo -e "${RED}❌ Model setup workflow failed${NC}"
-    echo ""
-    echo "💡 Common solutions:"
-    echo "   1. Check SSH connectivity to GPU server"
-    echo "   2. Verify S3 cache directory permissions"
-    echo "   3. Ensure QuickStart toolkit is compatible"
-    echo "   4. Check GPU memory and disk space"
-    exit 1
-fi
-
-echo ""
-echo -e "${GREEN}✅ [STEP 2/5] Model setup completed successfully${NC}"
-
 # Create Riva service script
 echo ""
 echo -e "${BLUE}⚙️ [STEP 3/5] Creating Riva service scripts...${NC}"
