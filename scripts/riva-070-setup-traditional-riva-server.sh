@@ -531,35 +531,32 @@ run_on_server "
         echo "   📁 Entering QuickStart directory: $QUICKSTART_DIR"
         cd "$QUICKSTART_DIR"
 
-        # Modify config.sh to use our model
-        MODEL_BASENAME=\$(basename "$RIVA_MODEL_SELECTED")
-        cat > config.sh << 'EOQUICKSTART'
-#!/bin/bash
+        # Create config.sh with our model settings
+        MODEL_BASENAME=\$(basename \"$RIVA_MODEL_SELECTED\")
+        echo '#!/bin/bash' > config.sh
+        echo '' >> config.sh
+        echo '# Enable ASR service' >> config.sh
+        echo 'service_enabled_asr=true' >> config.sh
+        echo 'service_enabled_nlp=false' >> config.sh
+        echo 'service_enabled_tts=false' >> config.sh
+        echo '' >> config.sh
+        echo '# ASR settings' >> config.sh
+        echo \"models_asr=(\\\"$RIVA_MODEL_SELECTED\\\")\" >> config.sh
+        echo \"target_language_asr=\\\"$RIVA_LANGUAGE_CODE\\\"\" >> config.sh
+        echo '' >> config.sh
+        echo '# Use local model file' >> config.sh
+        echo 'use_existing_models=false' >> config.sh
+        echo '' >> config.sh
+        echo '# GPU settings' >> config.sh
+        echo 'gpus_to_use=\"0\"' >> config.sh
+        echo 'max_batch_size_asr=8' >> config.sh
+        echo '' >> config.sh
+        echo '# Advanced settings' >> config.sh
+        echo 'enable_chunking=true' >> config.sh
+        echo 'chunk_size_ms=1600' >> config.sh
 
-# Enable ASR service
-service_enabled_asr=true
-service_enabled_nlp=false
-service_enabled_tts=false
-
-# ASR settings
-models_asr=("MODEL_FILE_PLACEHOLDER")
-target_language_asr="LANG_CODE_PLACEHOLDER"
-
-# Use local model file
-use_existing_models=false
-
-# GPU settings
-gpus_to_use="0"
-max_batch_size_asr=8
-
-# Advanced settings
-enable_chunking=true
-chunk_size_ms=1600
-EOQUICKSTART
-
-        # Replace placeholders with actual values
-        sed -i "s/MODEL_FILE_PLACEHOLDER/\$MODEL_BASENAME/g" config.sh
-        sed -i "s/LANG_CODE_PLACEHOLDER/$RIVA_LANGUAGE_CODE/g" config.sh
+        # Verify config.sh was created successfully
+        echo \"   ✅ Config file created with model: \$MODEL_BASENAME\"
 
         # Run RIVA build process
         echo ''
