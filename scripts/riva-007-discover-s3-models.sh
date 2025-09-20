@@ -480,8 +480,27 @@ if [[ "$NIM_AVAILABLE" == "true" && "$choice" == "1" ]]; then
 elif [[ "$RIVA_AVAILABLE" == "true" ]] && ([[ "$choice" == "2" && "$NIM_AVAILABLE" == "false" ]] || [[ "$choice" == "2" && "$NIM_AVAILABLE" == "true" ]]); then
     DEPLOYMENT_APPROACH="riva"
 
-    # Select RIVA server (usually just one)
-    SELECTED_SERVER="${!RIVA_SERVERS[@]}"
+    # If multiple servers, let user choose
+    if [[ ${#RIVA_SERVERS[@]} -gt 1 ]]; then
+        echo ""
+        echo "🖥 Select RIVA server:"
+        server_array=($(printf '%s\n' "${!RIVA_SERVERS[@]}" | sort))
+        for i in "${!server_array[@]}"; do
+            server_file="${server_array[$i]}"
+            server_size="${RIVA_SERVER_SIZES[$server_file]}"
+            echo "  $((i+1))) $server_file (${server_size})"
+        done
+        echo ""
+        while true; do
+            read -p "Server choice [1-${#server_array[@]}]: " server_choice
+            if [[ "$server_choice" =~ ^[1-9][0-9]*$ ]] && [[ $server_choice -le ${#server_array[@]} ]]; then
+                SELECTED_SERVER="${server_array[$((server_choice-1))]}"
+                break
+            fi
+        done
+    else
+        SELECTED_SERVER="${!RIVA_SERVERS[@]}"
+    fi
 
     # If multiple models, let user choose
     if [[ ${#RIVA_MODELS[@]} -gt 1 ]]; then
