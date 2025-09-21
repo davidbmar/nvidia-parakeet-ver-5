@@ -331,18 +331,33 @@ scenario_014_auto_from_none() {
 }
 
 scenario_015_idempotent_on_existing() {
-  show_test_header "3" "Duplicate Prevention" "Verify deploy script prevents creating duplicate instances"
+  show_test_header "3" "Safety Check: Duplicate Prevention" "Testing if the deploy script PREVENTS accidental duplicate instances ($0.526/hour each!)"
+
+  echo "  $(c 36 "📋 What this test does:")"
+  echo "     We already have instance i-01c15d18bea75532f running"
+  echo "     Now we'll try to deploy AGAIN to see if it prevents duplicates"
+  echo ""
+  echo "  $(c 33 "⚠️  Expected behavior:")"
+  echo "     The script should REFUSE and show an error (❌)"
+  echo "     This is GOOD - it prevents costly mistakes!"
+  echo ""
 
   # TEST: Try to deploy when an instance already exists
-  # EXPECTED: Script should REFUSE to create a second instance
   local res rc
   res="$(run_and_capture "$R015" --timeout=10 --yes || true)"; rc="${res%%|*}"
 
-  # VERIFY: Script should exit with code 1 (refusing to create duplicate)
-  # This PREVENTS accidentally creating multiple expensive GPU instances
-  assert_exit "$rc" 1 "Deploy script correctly refuses to create duplicate instance"
+  # VERIFY: The script correctly REFUSED (exit code 1 means "I refused for safety")
+  # The ❌ error message above is EXPECTED - it shows the safety check worked!
+  if [[ "$rc" -eq 1 ]]; then
+    echo "  $(c 32 "✅ GOOD! Deploy script correctly REFUSED to create a duplicate")"
+    echo "     The ❌ error above is what we WANTED to see - it prevented a costly mistake"
+    record_result "Duplicate prevention safety check" "PASS"
+  else
+    echo "  $(c 31 "❌ BAD! Deploy script didn't prevent duplicate (exit code: $rc)")"
+    record_result "Duplicate prevention safety check" "FAIL"
+  fi
 
-  show_test_result "${RESULTS[-1]%% *}" "Duplicate Prevention"
+  show_test_result "${RESULTS[-1]%% *}" "Safety Check: Duplicate Prevention"
 }
 
 scenario_018_running_brief() {
