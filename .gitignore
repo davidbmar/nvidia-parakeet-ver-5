@@ -54,6 +54,7 @@ tmp/
 temp/
 *.tmp
 .tmp/
+.lock/
 *.wav
 *.mp3
 *.m4a
