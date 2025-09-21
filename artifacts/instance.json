@@ -1,0 +1,8 @@
+{
+  "instance_id": "i-0f90ee8817cd949c2",
+  "public_ip": "52.14.255.68",
+  "instance_type": "g4dn.xlarge",
+  "state": "running",
+  "created_at": "2025-09-21T22:15:00Z",
+  "deployment_id": "riva-20250921-183537"
+}
