@@ -119,16 +119,15 @@ is_int() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
 assert_exit() {
   local code="$1" expected="$2" name="$3"
 
-  # Clean the exit code of any non-numeric characters
-  code=$(echo "$code" | strip_ansi | head -n1 | grep -oE '^[0-9]+' || echo "INVALID")
-
-  if [[ "$code" == "INVALID" ]]; then
+  # The code should already be a clean integer from run_and_capture
+  # But double-check it's valid
+  if ! is_int "$code"; then
     record_result "$name" "FAIL"
-    err "Invalid exit code for: $name (raw='$1')"
+    err "Invalid exit code for: $name (got='$code')"
     return
   fi
 
-  if is_int "$code" && is_int "$expected" && [[ "$code" -eq "$expected" ]]; then
+  if [[ "$code" -eq "$expected" ]]; then
     record_result "$name" "PASS"
   else
     record_result "$name" "FAIL"
@@ -194,7 +193,7 @@ run_and_capture() {
   tmp="$(mktemp)"
   set +e
   # Run command and capture both output and exit code
-  "$cmd_name" "$@" 2>&1 > "$tmp"
+  "$cmd_name" "$@" > "$tmp" 2>&1
   rc=$?
   set -e
 
