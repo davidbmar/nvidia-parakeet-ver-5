@@ -42,8 +42,8 @@ update_env_value() {
 # =============================================================================
 S3_BUCKET="${NIM_S3_CACHE_BUCKET:-dbm-cf-2-web}"
 S3_NIM_CONTAINERS_PREFIX="bintarball/nim-containers"
-S3_RIVA_CONTAINERS_PREFIX="bintarball/riva"
-S3_RIVA_MODELS_PREFIX="bintarball/models"
+S3_RIVA_CONTAINERS_PREFIX="bintarball/riva-containers"
+S3_RIVA_MODELS_PREFIX="bintarball/riva-models"
 
 log_info "🔍 RIVA-007: S3 Deployment Strategy Discovery"
 echo "============================================================"
@@ -274,18 +274,19 @@ fi
 
 log_info "Scanning S3 for RIVA model files..."
 
-# Scan RIVA model files
+# Scan RIVA model files (including subdirectories)
 if aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" >/dev/null 2>&1; then
     while IFS= read -r line; do
-        if [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2})\ +([0-9.]+\ [KMGT]iB)\ (.+\.riva)$ ]]; then
+        if [[ "$line" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2})\ +([0-9.]+\ [KMGT]iB)\ (.+\.(riva|tar\.gz))$ ]]; then
             model_date="${BASH_REMATCH[1]}"
             model_size="${BASH_REMATCH[2]}"
-            model_file="${BASH_REMATCH[3]}"
+            model_file_path="${BASH_REMATCH[3]}"
+            model_file=$(basename "$model_file_path")
 
-            RIVA_MODELS["$model_file"]="s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/$model_file"
+            RIVA_MODELS["$model_file"]="s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/$model_file_path"
             RIVA_MODEL_SIZES["$model_file"]="$model_size"
         fi
-    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" --human-readable)
+    done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" --recursive --human-readable)
 fi
 
 # Display discovered components
@@ -295,7 +296,9 @@ echo "========================"
 echo ""
 echo "🚀 NIM CONTAINERS (Self-contained):"
 echo "-----------------------------------"
-if [[ ${#NIM_CONTAINERS[@]} -gt 0 ]]; then
+# Check if we found any NIM containers
+nim_container_count="${#NIM_CONTAINERS[@]}"
+if [[ "$nim_container_count" -gt 0 ]]; then
     for container_file in "${!NIM_CONTAINERS[@]}"; do
         container_size="${NIM_SIZES[$container_file]}"
         echo "   ✅ $container_file"
@@ -305,14 +308,18 @@ if [[ ${#NIM_CONTAINERS[@]} -gt 0 ]]; then
         echo ""
     done
 else
-    echo "   ❌ No NIM containers found"
+    echo "   ❌ No NIM containers found in S3"
+    echo "      🔍 Looking in: s3://${S3_BUCKET}/${S3_NIM_CONTAINERS_PREFIX}/t4-containers/"
+    echo "      💡 Upload NIM containers to enable this deployment option"
     echo ""
 fi
 
 echo "🏗 RIVA COMPONENTS (Server + Models):"
 echo "-------------------------------------"
 echo "📦 RIVA Server Containers:"
-if [[ ${#RIVA_SERVERS[@]} -gt 0 ]]; then
+# Check if we found any RIVA servers
+riva_server_count="${#RIVA_SERVERS[@]}"
+if [[ "$riva_server_count" -gt 0 ]]; then
     for server_file in "${!RIVA_SERVERS[@]}"; do
         server_size="${RIVA_SERVER_SIZES[$server_file]}"
         echo "   ✅ $server_file"
@@ -327,7 +334,9 @@ else
 fi
 
 echo "🧠 RIVA Model Files:"
-if [[ ${#RIVA_MODELS[@]} -gt 0 ]]; then
+# Check if we found any RIVA models
+riva_model_count="${#RIVA_MODELS[@]}"
+if [[ "$riva_model_count" -gt 0 ]]; then
     for model_file in "${!RIVA_MODELS[@]}"; do
         model_size="${RIVA_MODEL_SIZES[$model_file]}"
         echo "   ✅ $model_file"
@@ -342,8 +351,8 @@ else
 fi
 
 # Check if we have viable deployment options
-NIM_AVAILABLE=$([[ ${#NIM_CONTAINERS[@]} -gt 0 ]] && echo "true" || echo "false")
-RIVA_AVAILABLE=$([[ ${#RIVA_SERVERS[@]} -gt 0 && ${#RIVA_MODELS[@]} -gt 0 ]] && echo "true" || echo "false")
+NIM_AVAILABLE=$([[ "$nim_container_count" -gt 0 ]] && echo "true" || echo "false")
+RIVA_AVAILABLE=$([[ "$riva_server_count" -gt 0 && "$riva_model_count" -gt 0 ]] && echo "true" || echo "false")
 
 if [[ "$NIM_AVAILABLE" == "false" && "$RIVA_AVAILABLE" == "false" ]]; then
     log_error "No viable deployment options found in S3"
@@ -370,7 +379,7 @@ echo "================================"
 
 if [[ "$NIM_AVAILABLE" == "true" ]]; then
     echo "🚀 Option 1: NIM Deployment"
-    echo "   Available containers: ${#NIM_CONTAINERS[@]}"
+    echo "   Available containers: $nim_container_count"
     for container_file in "${!NIM_CONTAINERS[@]}"; do
         echo "   • $container_file (${NIM_SIZES[$container_file]})"
     done
@@ -381,11 +390,11 @@ fi
 
 if [[ "$RIVA_AVAILABLE" == "true" ]]; then
     echo "🏗 Option 2: Traditional RIVA Deployment"
-    echo "   Available servers: ${#RIVA_SERVERS[@]}"
+    echo "   Available servers: $riva_server_count"
     for server_file in "${!RIVA_SERVERS[@]}"; do
         echo "   • $server_file (${RIVA_SERVER_SIZES[$server_file]})"
     done
-    echo "   Available models: ${#RIVA_MODELS[@]}"
+    echo "   Available models: $riva_model_count"
     for model_file in "${!RIVA_MODELS[@]}"; do
         echo "   • $model_file (${RIVA_MODEL_SIZES[$model_file]})"
     done
@@ -414,7 +423,7 @@ if [[ "$NIM_AVAILABLE" == "true" ]]; then
     echo "1) 🚀 NIM Deployment (Modern)"
     echo "   → Self-contained containers with built-in models"
     echo "   → Faster startup, cloud-native architecture"
-    echo "   → Available containers: ${#NIM_CONTAINERS[@]}"
+    echo "   → Available containers: $nim_container_count"
     echo ""
 fi
 
@@ -424,7 +433,7 @@ if [[ "$RIVA_AVAILABLE" == "true" ]]; then
     echo "$next_num) 🏗 Traditional RIVA Deployment"
     echo "   → RIVA server + separate model files"
     echo "   → Model flexibility, traditional API"
-    echo "   → Available: ${#RIVA_SERVERS[@]} servers, ${#RIVA_MODELS[@]} models"
+    echo "   → Available: $riva_server_count servers, $riva_model_count models"
     echo ""
 fi
 
@@ -456,7 +465,7 @@ if [[ "$NIM_AVAILABLE" == "true" && "$choice" == "1" ]]; then
     DEPLOYMENT_APPROACH="nim"
 
     # If multiple NIM containers, let user choose
-    if [[ ${#NIM_CONTAINERS[@]} -gt 1 ]]; then
+    if [[ "$nim_container_count" -gt 1 ]]; then
         echo ""
         echo "🚀 Select NIM container:"
         container_array=($(printf '%s\n' "${!NIM_CONTAINERS[@]}" | sort))
@@ -481,7 +490,7 @@ elif [[ "$RIVA_AVAILABLE" == "true" ]] && ([[ "$choice" == "2" && "$NIM_AVAILABL
     DEPLOYMENT_APPROACH="riva"
 
     # If multiple servers, let user choose
-    if [[ ${#RIVA_SERVERS[@]} -gt 1 ]]; then
+    if [[ "$riva_server_count" -gt 1 ]]; then
         echo ""
         echo "🖥 Select RIVA server:"
         server_array=($(printf '%s\n' "${!RIVA_SERVERS[@]}" | sort))
@@ -503,7 +512,7 @@ elif [[ "$RIVA_AVAILABLE" == "true" ]] && ([[ "$choice" == "2" && "$NIM_AVAILABL
     fi
 
     # If multiple models, let user choose
-    if [[ ${#RIVA_MODELS[@]} -gt 1 ]]; then
+    if [[ "$riva_model_count" -gt 1 ]]; then
         echo ""
         echo "🧠 Select RIVA model:"
         model_array=($(printf '%s\n' "${!RIVA_MODELS[@]}" | sort))
