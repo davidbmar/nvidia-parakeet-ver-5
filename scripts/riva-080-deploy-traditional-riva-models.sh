@@ -203,7 +203,9 @@ EOCONFIG
         
         # Create top-level ASR service config with correct model reference
         echo 'Creating ASR service configuration...'
-        ACTUAL_MODEL_NAME=\\$(find /opt/riva/deployed_models/asr -maxdepth 1 -type d -name '*Parakeet*' | head -1 | xargs basename 2>/dev/null || echo 'Parakeet-RNNT-XXL-1.1b_spe1024_en-US_8.1')
+        # Ensure the directory exists before trying to find models
+        mkdir -p /opt/riva/deployed_models/asr
+        ACTUAL_MODEL_NAME=\\$(find /opt/riva/deployed_models/asr -maxdepth 1 -type d -name '*Parakeet*' | head -1 | xargs basename 2>/dev/null || echo 'Parakeet-RNNT-XXL-1-1b_spe1024_en-US_8-1')
         echo \\\"Using model name: \\$ACTUAL_MODEL_NAME\\\"
         
         cat > /opt/riva/deployed_models/asr/config.pbtxt << ASRCONFIG

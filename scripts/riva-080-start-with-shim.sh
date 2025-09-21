@@ -10,12 +10,12 @@ NEXT_SUCCESS="./scripts/riva-090-smoketest.sh"
 NEXT_FAILURE="./scripts/riva-081-diagnostics.sh"
 init_script "$SCRIPT_ID" "$SCRIPT_NAME" "$SCRIPT_DESC" "$NEXT_SUCCESS" "$NEXT_FAILURE"
 
-# Default values from environment
-HOST="${RIVA_HOST:-}";
-CONTAINER_NAME="${RIVA_CONTAINER_NAME:-riva-speech}"
-MODEL_REPO_HOST="${RIVA_MODEL_REPO_HOST:-/opt/riva/riva_quickstart_2.15.0/riva-model-repo}"
-MODEL_REPO_CONTAINER="${RIVA_MODEL_REPO_CONTAINER:-/opt/tritonserver/models}"
-IMAGE="${RIVA_IMAGE:-nvcr.io/nvidia/riva/riva-speech:2.19.0}"
+# Initialize defaults (will be updated after loading environment)
+HOST=""
+CONTAINER_NAME=""
+MODEL_REPO_HOST=""
+MODEL_REPO_CONTAINER=""
+IMAGE=""
 FORCE="${FORCE:-0}"
 
 # Parse arguments
@@ -39,15 +39,27 @@ done
 require_cmds docker
 load_environment
 
+# Update defaults from loaded environment
+if [ -z "$HOST" ]; then
+  HOST="${RIVA_HOST:-}"
+fi
+if [ -z "$MODEL_REPO_HOST" ] || [ "$MODEL_REPO_HOST" = "/opt/riva/riva_quickstart_2.15.0/riva-model-repo" ]; then
+  MODEL_REPO_HOST="${RIVA_MODEL_REPO_HOST:-/opt/riva/riva_quickstart_2.19.0/riva-model-repo/models}"
+fi
+CONTAINER_NAME="${RIVA_CONTAINER_NAME:-riva-speech}"
+MODEL_REPO_CONTAINER="${RIVA_MODEL_REPO_CONTAINER:-/opt/tritonserver/models}"
+IMAGE="${RIVA_IMAGE:-nvcr.io/nvidia/riva/riva-speech:2.19.0}"
+
 # Validate prerequisites
 if [ -z "$HOST" ]; then
   err "RIVA_HOST not set. Please configure .env or use --host flag"
   handle_exit 10
 fi
 
-if [ ! -d "$MODEL_REPO_HOST" ]; then
-  err "Model repository not found at: $MODEL_REPO_HOST"
-  err "Please run riva-075-validate-models.sh first"
+# Validate model repository exists on remote host
+if ! run_ssh "$HOST" "test -d '$MODEL_REPO_HOST'"; then
+  err "Model repository not found at: $MODEL_REPO_HOST on host $HOST"
+  err "Please ensure model repository exists on remote host"
   handle_exit 20
 fi
 
@@ -107,7 +119,7 @@ docker run -d --restart unless-stopped --gpus all \\
   -v $MODEL_REPO_HOST:$MODEL_REPO_CONTAINER:ro \\
   -p 50051:50051 -p 8000:8000 -p 8001:8001 -p 8002:8002 \\
   $IMAGE \\
-  start-riva --riva-uri=0.0.0.0:50051 --asr_service=true --nlp_service=false --tts_service=false
+  /opt/riva/bin/start-riva --riva-uri=0.0.0.0:50051 --asr_service=true --nlp_service=false --tts_service=false
 
 echo \"Container started with ID: \$(docker ps -aqf name=$CONTAINER_NAME)\"
 "
