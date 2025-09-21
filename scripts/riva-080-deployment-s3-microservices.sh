@@ -201,9 +201,23 @@ ssh_load_riva_container() {
                 echo 'CONTAINER_FAILED'
             fi
         else
-            echo '[SSH LOG] Container file not found - falling back to docker pull'
-            docker pull nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION}
-            echo 'CONTAINER_PULLED'
+            echo '[SSH LOG] Container file not found - attempting docker pull and S3 upload'
+            if docker pull nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION}; then
+                echo '[SSH LOG] Docker pull successful, saving and uploading to S3 for future use'
+                TEMP_TAR_FILE=\"/tmp/riva-speech-${RIVA_VERSION}.tar.gz\"
+                echo '[SSH LOG] Saving container to \$TEMP_TAR_FILE'
+                docker save nvcr.io/nvidia/riva/riva-speech:${RIVA_VERSION} | gzip > \"\$TEMP_TAR_FILE\"
+                echo '[SSH LOG] Uploading to S3 for future cache...'
+                aws s3 cp \"\$TEMP_TAR_FILE\" \"s3://dbm-cf-2-web/bintarball/riva/riva-speech-${RIVA_VERSION}.tar.gz\" --region ${AWS_REGION}
+                # Copy to local cache for future use
+                cp \"\$TEMP_TAR_FILE\" \"/mnt/cache/riva-cache/riva-speech-${RIVA_VERSION}.tar.gz\"
+                rm \"\$TEMP_TAR_FILE\"
+                echo '[SSH LOG] Container cached to S3 and local storage'
+                echo 'CONTAINER_PULLED'
+            else
+                echo '[SSH LOG] Docker pull failed'
+                echo 'CONTAINER_FAILED'
+            fi
         fi
     ") || return 1
 

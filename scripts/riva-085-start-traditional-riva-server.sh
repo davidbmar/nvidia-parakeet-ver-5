@@ -328,7 +328,25 @@ EOCONFIG
 echo -e "${BLUE}📦 Pulling NVIDIA Riva container...${NC}"
 
 # Determine Riva version
-RIVA_VERSION="${RIVA_VERSION:-2.15.0}"
+# Get RIVA version from .env RIVA_SERVER_PATH, prefer newer versions
+if [[ -n "${RIVA_SERVER_PATH:-}" ]]; then
+    # Extract version from S3 path (e.g., riva-speech-2.19.0.tar.gz -> 2.19.0)
+    RIVA_VERSION_FROM_ENV="${RIVA_SERVER_PATH#*speech-}"
+    RIVA_VERSION_FROM_ENV="${RIVA_VERSION_FROM_ENV%.tar.gz}"
+    RIVA_VERSION="${RIVA_VERSION_FROM_ENV}"
+    echo "Using RIVA version $RIVA_VERSION from .env RIVA_SERVER_PATH"
+else
+    # Fallback: check S3 for available versions, prefer newest
+    echo "No RIVA_SERVER_PATH in .env, checking S3 for available versions..."
+    AVAILABLE_VERSIONS=$(aws s3 ls s3://dbm-cf-2-web/bintarball/riva/ | grep riva-speech | awk '{print $4}' | sed 's/riva-speech-//g; s/\.tar\.gz//g' | sort -V -r | head -1)
+    if [[ -n "$AVAILABLE_VERSIONS" ]]; then
+        RIVA_VERSION="$AVAILABLE_VERSIONS"
+        echo "Using newest available RIVA version from S3: $RIVA_VERSION"
+    else
+        RIVA_VERSION="2.19.0"  # Updated default to newer version
+        echo "No versions found in S3, using default: $RIVA_VERSION"
+    fi
+fi
 
 run_on_server "
     # Login to NGC if API key is provided
@@ -337,8 +355,67 @@ run_on_server "
     fi
     
     # Pull Riva server container
-    echo '📥 Pulling Riva server container...'
-    docker pull nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION
+    echo '📥 Loading Riva server container (S3-first approach)...'
+
+    # Check if container already exists
+    if docker images nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION | grep -q $RIVA_VERSION; then
+        echo '✅ Riva container already available'
+    else
+        # Try S3 cache first
+        S3_CONTAINER_PATH=\"s3://dbm-cf-2-web/bintarball/riva/riva-speech-$RIVA_VERSION.tar.gz\"
+        CONTAINER_FILE=\"riva-speech-$RIVA_VERSION.tar.gz\"
+        CACHE_DIR=\"/mnt/cache/riva-cache\"
+
+        mkdir -p \$CACHE_DIR
+        cd \$CACHE_DIR
+
+        echo '🔍 Checking S3 cache for RIVA container...'
+        if [ ! -f \"\$CONTAINER_FILE\" ]; then
+            echo '📥 Downloading from S3...'
+            if aws s3 cp \"\$S3_CONTAINER_PATH\" . --region us-east-2; then
+                echo '✅ Downloaded from S3 successfully'
+            else
+                echo '⚠️ S3 download failed, will try docker pull'
+                CONTAINER_FILE=\"\"
+            fi
+        else
+            echo '✅ Found cached container file'
+        fi
+
+        if [ -n \"\$CONTAINER_FILE\" ] && [ -f \"\$CONTAINER_FILE\" ]; then
+            echo '📦 Loading container from cache...'
+            if docker load < \"\$CONTAINER_FILE\"; then
+                echo '✅ Container loaded from cache successfully'
+                # Tag properly if needed
+                LOADED_IMAGE=\$(docker images --format '{{.Repository}}:{{.Tag}}' | grep riva-speech | head -1)
+                if [ \"\$LOADED_IMAGE\" != \"nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION\" ]; then
+                    docker tag \"\$LOADED_IMAGE\" \"nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION\"
+                fi
+            else
+                echo '❌ Failed to load from cache, falling back to docker pull'
+                CONTAINER_FILE=\"\"
+            fi
+        fi
+
+        # Fallback to docker pull if S3 failed
+        if [ -z \"\$CONTAINER_FILE\" ]; then
+            echo '📥 Pulling from NVIDIA registry...'
+            if docker pull nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION; then
+                echo '✅ Pulled from NVIDIA successfully'
+                # Save to S3 for future use
+                echo '💾 Saving to S3 cache for future use...'
+                TEMP_TAR=\"/tmp/riva-speech-$RIVA_VERSION.tar.gz\"
+                docker save nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION | gzip > \"\$TEMP_TAR\"
+                aws s3 cp \"\$TEMP_TAR\" \"\$S3_CONTAINER_PATH\" --region us-east-2
+                cp \"\$TEMP_TAR\" \"\$CACHE_DIR/\$CONTAINER_FILE\"
+                rm \"\$TEMP_TAR\"
+                echo '✅ Cached to S3 for future deployments'
+            else
+                echo '❌ Failed to pull from NVIDIA registry'
+                exit 1
+            fi
+        fi
+    fi
     
     echo '✅ Riva container pulled successfully'
 " "Pulling Riva container"
