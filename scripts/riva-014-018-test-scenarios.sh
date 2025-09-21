@@ -187,14 +187,25 @@ strip_ansi() {
 # Capture runner that also extracts LOG_PATH=... if printed
 run_and_capture() {
   local cmd_name="$1"; shift
+  # Check if first arg is a timeout value (e.g., --timeout=30)
+  local timeout_seconds=120  # Default timeout of 2 minutes
+  if [[ "${1:-}" =~ ^--timeout=([0-9]+)$ ]]; then
+    timeout_seconds="${BASH_REMATCH[1]}"
+    shift
+  fi
+
   # Print info to stderr so it doesn't get captured in command substitution
-  info "Running: $cmd_name $*" >&2
+  info "Running: $cmd_name $* (timeout: ${timeout_seconds}s)" >&2
   local tmp rc hint
   tmp="$(mktemp)"
   set +e
-  # Run command and capture both output and exit code
-  "$cmd_name" "$@" > "$tmp" 2>&1
+  # Run command with timeout and capture both output and exit code
+  timeout "$timeout_seconds" "$cmd_name" "$@" > "$tmp" 2>&1
   rc=$?
+  # Check if it was killed by timeout (exit code 124)
+  if [[ $rc -eq 124 ]]; then
+    err "Command timed out after ${timeout_seconds}s"
+  fi
   set -e
 
   # Show output to console with indent (also to stderr)
@@ -311,7 +322,8 @@ scenario_015_idempotent_on_existing() {
   show_test_header "3" "Deploy Idempotency" "Ensure deploy script rejects duplicate deployments"
 
   local res rc
-  res="$(run_and_capture "$R015" --yes || true)"; rc="${res%%|*}"
+  # Use a shorter timeout for idempotency check - it should fail quickly (within 10 seconds)
+  res="$(run_and_capture "$R015" --timeout=10 --yes || true)"; rc="${res%%|*}"
   assert_exit "$rc" 1 "015 idempotent (instance already exists)"
 
   show_test_result "${RESULTS[-1]%% *}" "Deploy Idempotency"
