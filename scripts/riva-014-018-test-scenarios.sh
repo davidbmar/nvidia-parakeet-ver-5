@@ -54,8 +54,10 @@ record_result() {
 }
 
 show_test_header() {
-  local test_num="$1" test_name="$2" test_desc="$3"
-  ((CURRENT_TEST++))
+  local test_num="$1"
+  local test_name="$2"
+  local test_desc="$3"
+  CURRENT_TEST=$((CURRENT_TEST + 1))
   echo
   echo "$(c 34 "┌────────────────────────────────────────────────────────────────────────┐")"
   echo "$(c 34 "│") $(c 33 "Test $test_num/$TOTAL_TESTS:") $(c 37 "$test_name")$(printf "%*s" $((60 - ${#test_name})) "") $(c 34 "│")"
@@ -64,7 +66,8 @@ show_test_header() {
 }
 
 show_test_result() {
-  local result="$1" test_name="$2"
+  local result="$1"
+  local test_name="$2"
   if [[ "$result" == "PASS" ]]; then
     echo "$(c 32 "✅ PASSED:") $test_name"
   else
