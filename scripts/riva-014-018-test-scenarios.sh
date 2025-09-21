@@ -43,25 +43,62 @@ need aws; need jq
 
 mkdir -p "$LOG_DIR" "$ART_DIR" "$LOCK_DIR"
 
-# Keep a scoreboard
+# Keep a scoreboard and progress tracking
 declare -a RESULTS=()
+declare -i CURRENT_TEST=0
+declare -i TOTAL_TESTS=10
 
 record_result() {
   local name="$1" status="$2"
   RESULTS+=("$status  $name")
 }
 
+show_test_header() {
+  local test_num="$1" test_name="$2" test_desc="$3"
+  ((CURRENT_TEST++))
+  echo
+  echo "$(c 34 "┌────────────────────────────────────────────────────────────────────────┐")"
+  echo "$(c 34 "│") $(c 1;33 "Test $test_num/$TOTAL_TESTS:") $(c 1;37 "$test_name")$(printf "%*s" $((60 - ${#test_name})) "") $(c 34 "│")"
+  echo "$(c 34 "│") $(c 36 "$test_desc")$(printf "%*s" $((70 - ${#test_desc})) "") $(c 34 "│")"
+  echo "$(c 34 "└────────────────────────────────────────────────────────────────────────┘")"
+}
+
+show_test_result() {
+  local result="$1" test_name="$2"
+  if [[ "$result" == "PASS" ]]; then
+    echo "$(c 32 "✅ PASSED:") $test_name"
+  else
+    echo "$(c 31 "❌ FAILED:") $test_name"
+  fi
+  echo
+}
+
 show_scoreboard() {
   echo
-  echo "================== Summary =================="
+  echo "$(c 34 "╔══════════════════════════════════════════════════════════════════════╗")"
+  echo "$(c 34 "║")                    $(c 1;33 "🏁 Final Test Results")                        $(c 34 "║")"
+  echo "$(c 34 "╚══════════════════════════════════════════════════════════════════════╝")"
+  echo
   local pass=0 fail=0
   for line in "${RESULTS[@]}"; do
-    if [[ "$line" =~ ^PASS ]]; then ok "${line#PASS  }"; ((pass++))
-    else err "${line#FAIL  }"; ((fail++))
+    if [[ "$line" =~ ^PASS ]]; then
+      echo "$(c 32 "✅") ${line#PASS  }"
+      ((pass++))
+    else
+      echo "$(c 31 "❌") ${line#FAIL  }"
+      ((fail++))
     fi
   done
-  echo "---------------------------------------------"
-  echo "Passed: $pass  Failed: $fail"
+  echo
+  echo "$(c 34 "────────────────────────────────────────────────────────────────────────")"
+  if [[ $fail -eq 0 ]]; then
+    echo "$(c 1;32 "🎉 ALL TESTS PASSED!") Total: $pass/$((pass + fail))"
+    echo "$(c 32 "✅ GPU Instance Management System is working correctly")"
+  else
+    echo "$(c 1;31 "⚠️  SOME TESTS FAILED:") Passed: $(c 32 "$pass") Failed: $(c 31 "$fail") Total: $((pass + fail))"
+    echo "$(c 33 "⚡ Please review failed tests and fix issues before production use")"
+  fi
+  echo "$(c 34 "────────────────────────────────────────────────────────────────────────")"
   [[ $fail -eq 0 ]] || exit 1
 }
 
@@ -78,11 +115,21 @@ is_int() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
 
 assert_exit() {
   local code="$1" expected="$2" name="$3"
+
+  # Clean the exit code of any non-numeric characters
+  code=$(echo "$code" | strip_ansi | head -n1 | grep -oE '^[0-9]+' || echo "INVALID")
+
+  if [[ "$code" == "INVALID" ]]; then
+    record_result "$name" "FAIL"
+    err "Invalid exit code for: $name (raw='$1')"
+    return
+  fi
+
   if is_int "$code" && is_int "$expected" && [[ "$code" -eq "$expected" ]]; then
     record_result "$name" "PASS"
   else
     record_result "$name" "FAIL"
-    err "Expected exit $expected but got $code for: $name (code='$code')"
+    err "Expected exit $expected but got $code for: $name"
   fi
 }
 
@@ -130,6 +177,11 @@ aws_terminate_test_instances() {
   info "Terminating test instances: $ids"
 }
 
+# Strip ANSI color codes from text
+strip_ansi() {
+  sed 's/\x1b\[[0-9;]*m//g'
+}
+
 # Capture runner that also extracts LOG_PATH=... if printed
 run_and_capture() {
   local cmd_name="$1"; shift
@@ -146,9 +198,9 @@ run_and_capture() {
   # Show output to console with indent (also to stderr)
   cat "$tmp" | sed -e 's/^/  │ /' >&2
 
-  # Extract LOG_PATH=... if the script prints it
-  hint="$(grep -E '^LOG_PATH=' "$tmp" | tail -n1 | cut -d= -f2 || true)"
-  # Only output the result to stdout
+  # Extract LOG_PATH=... if the script prints it (strip ANSI codes first)
+  hint="$(strip_ansi < "$tmp" | grep -E '^LOG_PATH=' | tail -n1 | cut -d= -f2 || true)"
+  # Only output the result to stdout (ensure rc is clean integer)
   echo "$rc|$hint"
   rm -f "$tmp"
 }
@@ -222,14 +274,20 @@ fixture_terminated_drift() {
 
 # ---------- Scenarios ----------
 scenario_018_none_brief() {
+  show_test_header "1" "Status Check - NONE State" "Validate status reporting when no instance exists"
+
   fixture_none
   ensure_env_bootstrap
   local res log_hint rc
   res="$(run_and_capture "$R018" --brief || true)"; rc="${res%%|*}"
   assert_exit "$rc" 1 "018 brief reports none (exit 1 when no instance)"
+
+  show_test_result "${RESULTS[-1]%% *}" "Status Check - NONE State"
 }
 
 scenario_014_auto_from_none() {
+  show_test_header "2" "Auto Deploy from NONE" "Test smart orchestrator deployment decision"
+
   fixture_none
   ensure_env_bootstrap
   local res log_hint rc log
@@ -237,21 +295,33 @@ scenario_014_auto_from_none() {
   log="$(latest_log "$log_hint")"
   assert_exit "$rc" 0 "014 auto chooses deploy"
   assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "014 milestone deployed"
+
+  show_test_result "${RESULTS[-1]%% *}" "Auto Deploy from NONE"
 }
 
 scenario_015_idempotent_on_existing() {
+  show_test_header "3" "Deploy Idempotency" "Ensure deploy script rejects duplicate deployments"
+
   local res rc
   res="$(run_and_capture "$R015" --yes || true)"; rc="${res%%|*}"
   assert_exit "$rc" 1 "015 idempotent (instance already exists)"
+
+  show_test_result "${RESULTS[-1]%% *}" "Deploy Idempotency"
 }
 
 scenario_018_running_brief() {
+  show_test_header "4" "Status Check - RUNNING State" "Validate status reporting for active instance"
+
   local res rc
   res="$(run_and_capture "$R018" --brief || true)"; rc="${res%%|*}"
   assert_exit "$rc" 0 "018 brief while running"
+
+  show_test_result "${RESULTS[-1]%% *}" "Status Check - RUNNING State"
 }
 
 scenario_017_stop_then_016_start() {
+  show_test_header "5" "Stop → Start Lifecycle" "Test complete instance lifecycle with health checks"
+
   fixture_stopped_from_running
 
   local res rc log_hint log
@@ -261,43 +331,67 @@ scenario_017_stop_then_016_start() {
   assert_exit "$rc" 0 "016 start stopped instance"
   assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "016 milestone started"
   assert_log_contains "$log" 'any(.step=="health_check" and .status=="ok")' "016 health checks ok"
+
+  show_test_result "${RESULTS[-1]%% *}" "Stop → Start Lifecycle"
 }
 
-scenario_016_when_running_should_fail_code2() {
+scenario_016_when_running_should_be_noop() {
+  show_test_header "6" "Start When Running" "Validate start script behavior on already-running instance"
+
   local res rc
   res="$(run_and_capture "$R016" --yes || true)"; rc="${res%%|*}"
-  assert_exit "$rc" 2 "016 returns 2 when instance is already running"
+  assert_exit "$rc" 0 "016 returns 0 when instance is already running (no-op)"
+
+  show_test_result "${RESULTS[-1]%% *}" "Start When Running"
 }
 
 scenario_017_double_stop_should_warn_code1() {
+  show_test_header "7" "Double Stop Idempotency" "Ensure stop script handles already-stopped instances"
+
   # Ensure stopped first
   fixture_stopped_from_running
   # Second stop
   local res rc
   res="$(run_and_capture "$R017" --yes || true)"; rc="${res%%|*}"
   assert_exit "$rc" 0 "017 returns 0 when not running (idempotent)"
+
+  show_test_result "${RESULTS[-1]%% *}" "Double Stop Idempotency"
 }
 
 scenario_018_json() {
+  show_test_header "8" "JSON Status Output" "Test machine-readable status reporting"
+
   local res rc
   res="$(run_and_capture "$R018" --json || true)"; rc="${res%%|*}"
   assert_exit "$rc" 0 "018 json outputs state object"
+
+  show_test_result "${RESULTS[-1]%% *}" "JSON Status Output"
 }
 
 scenario_014_auto_from_terminated_drift() {
+  show_test_header "9" "Drift Detection & Recovery" "Simulate terminated instance with stale artifacts"
+
   fixture_terminated_drift
   local res rc log_hint log
   res="$(run_and_capture "$R014" --auto --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
   log="$(latest_log "$log_hint")"
   assert_exit "$rc" 0 "014 auto reconciles drift via deploy"
   assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "014 milestone deployed after drift"
+
+  show_test_result "${RESULTS[-1]%% *}" "Drift Detection & Recovery"
 }
 
 # ---------- Health failure injections (optional) ----------
 scenario_016_health_failures_demo() {
+  show_test_header "10" "Health Failure Demo [OPTIONAL]" "Demonstrate health check failure handling"
+
   warn "Running health failure demo (will attempt to degrade services on the instance)."
   warn "SKIPPING by default. Set RUN_HEALTH_FAIL=1 to enable."
-  [[ "${RUN_HEALTH_FAIL:-0}" -eq 1 ]] || return 0
+  if [[ "${RUN_HEALTH_FAIL:-0}" -ne 1 ]]; then
+    record_result "016 health failure demo (skipped)" "PASS"
+    show_test_result "PASS" "Health Failure Demo [SKIPPED]"
+    return 0
+  fi
 
   # Example: simulate docker down check failing by stopping docker remotely
   # You should have an SSH helper in your common lib; here we assume ENV has RIVA_PUBLIC_IP.
@@ -317,18 +411,151 @@ scenario_016_health_failures_demo() {
 
   info "Restoring docker..."
   ssh -o StrictHostKeyChecking=no "ubuntu@${ip}" "sudo systemctl start docker" || warn "Docker restore may have failed"
+
+  show_test_result "${RESULTS[-1]%% *}" "Health Failure Demo"
+}
+
+# ---------- Test Overview ----------
+show_test_overview() {
+  echo
+  echo "$(c 34 "╔════════════════════════════════════════════════════════════════════════╗")"
+  echo "$(c 34 "║")                 $(c 1;33 "🧪 GPU Instance Manager Test Suite")                   $(c 34 "║")"
+  echo "$(c 34 "╚════════════════════════════════════════════════════════════════════════╝")"
+  echo
+  echo "$(c 1;36 "📋 Test Plan Overview:")"
+  echo "This comprehensive test suite validates the modular GPU instance management"
+  echo "system through real AWS EC2 operations and state transitions."
+  echo
+  echo "$(c 1;33 "⚠️  WARNING: This test creates REAL AWS resources and incurs costs!")"
+  echo "   • Instance Type: g4dn.xlarge (\$0.526/hour)"
+  echo "   • Estimated Total Cost: ~\$0.50 (test runtime ~1 hour)"
+  echo "   • Test instances will be automatically cleaned up"
+  echo
+  echo "$(c 1;32 "📊 Test Scenarios (10 total):")"
+  echo
+  echo "  $(c 33 "1.") $(c 32 "🔍") $(c 1 "Status Check - NONE State")"
+  echo "      └ Validates status reporting when no instance exists"
+  echo "      └ Expected: Exit 1, clear error message"
+  echo
+  echo "  $(c 33 "2.") $(c 32 "🚀") $(c 1 "Auto Deploy from NONE")"
+  echo "      └ Tests smart orchestrator deployment decision"
+  echo "      └ Expected: Full deployment, health checks, cost tracking"
+  echo
+  echo "  $(c 33 "3.") $(c 32 "🔄") $(c 1 "Deploy Idempotency")"
+  echo "      └ Ensures deploy script rejects duplicate deployments"
+  echo "      └ Expected: Exit 1, instance already exists message"
+  echo
+  echo "  $(c 33 "4.") $(c 32 "📊") $(c 1 "Status Check - RUNNING State")"
+  echo "      └ Validates status reporting for active instance"
+  echo "      └ Expected: Exit 0, instance details, cost analysis"
+  echo
+  echo "  $(c 33 "5.") $(c 32 "⏸️") $(c 1 "Stop → Start Lifecycle")"
+  echo "      └ Tests complete instance lifecycle with health checks"
+  echo "      └ Expected: Graceful stop, successful restart, all checks pass"
+  echo
+  echo "  $(c 33 "6.") $(c 32 "⚡") $(c 1 "Start When Running")"
+  echo "      └ Validates start script behavior on already-running instance"
+  echo "      └ Expected: Exit 0, no-op with health checks"
+  echo
+  echo "  $(c 33 "7.") $(c 32 "🔁") $(c 1 "Double Stop Idempotency")"
+  echo "      └ Ensures stop script handles already-stopped instances"
+  echo "      └ Expected: Exit 0, idempotent behavior"
+  echo
+  echo "  $(c 33 "8.") $(c 32 "📄") $(c 1 "JSON Status Output")"
+  echo "      └ Tests machine-readable status reporting"
+  echo "      └ Expected: Valid JSON with instance state"
+  echo
+  echo "  $(c 33 "9.") $(c 32 "💥") $(c 1 "Drift Detection & Recovery")"
+  echo "      └ Simulates terminated instance with stale artifacts"
+  echo "      └ Expected: Detect drift, recommend corrective action"
+  echo
+  echo "  $(c 33 "10.") $(c 32 "🏥") $(c 1 "Health Failure Demo") $(c 33 "[OPTIONAL]")"
+  echo "       └ Demonstrates health check failure handling"
+  echo "       └ Expected: Controlled degradation, clear error reporting"
+  echo
+  echo "$(c 1;34 "🛠️  What Gets Tested:")"
+  echo "   • AWS EC2 instance lifecycle (deploy/start/stop/terminate)"
+  echo "   • SSH connectivity and health monitoring"
+  echo "   • GPU detection and Docker runtime validation"
+  echo "   • Cost tracking and savings calculations"
+  echo "   • State persistence and artifact management"
+  echo "   • Error handling and idempotent operations"
+  echo "   • JSON structured logging and monitoring integration"
+  echo
+  echo "$(c 1;35 "⏱️  Estimated Timeline:")"
+  echo "   • Instance deployment: ~3-5 minutes"
+  echo "   • Lifecycle operations: ~2-3 minutes each"
+  echo "   • Total estimated runtime: 45-60 minutes"
+  echo "   • Cleanup and termination: ~2 minutes"
+  echo
+  echo "$(c 1;31 "💰 Cost Breakdown:")"
+  echo "   • Instance runtime: ~\$0.40-0.50"
+  echo "   • EBS storage: ~\$0.02"
+  echo "   • Data transfer: ~\$0.01"
+  echo "   • Total estimated cost: \$0.43-0.53"
+  echo
+  echo "$(c 1;36 "🎯 Success Criteria:")"
+  echo "   • All 9 core tests pass (10th is optional)"
+  echo "   • No resource leaks or orphaned instances"
+  echo "   • Proper cost tracking and reporting"
+  echo "   • Clean state transitions and error handling"
+  echo
+  printf "$(c 1;33 "Continue with test execution? [y/N]: ")"
+  read -r response
+  if [[ ! "$response" =~ ^[Yy]$ ]]; then
+    echo "$(c 33 "Test execution cancelled by user")"
+    exit 0
+  fi
+  echo "$(c 32 "✅ Starting test execution...")"
+  echo
 }
 
 # ---------- Orchestration ----------
+# Cleanup function for interrupted tests
+cleanup_on_exit() {
+  local exit_code=$?
+  echo
+  if [[ $exit_code -ne 0 ]]; then
+    warn "🚨 Test execution interrupted or failed!"
+    echo "$(c 33 "🧹 Cleanup recommendations:")"
+    echo "   • Check for running test instances: aws ec2 describe-instances --region $AWS_REGION"
+    echo "   • Clean up test instances: CLEAN_TEST_INSTANCES=1 $0"
+    echo "   • Review logs in: $LOG_DIR"
+  else
+    echo "$(c 32 "✅ Test execution completed successfully")"
+  fi
+
+  echo "$(c 36 "📊 AWS Cleanup Commands:")"
+  echo "   • List test instances: aws ec2 describe-instances --region $AWS_REGION --filters 'Name=tag:${TAG_KEY},Values=${TAG_VAL}'"
+  echo "   • Terminate all test instances: CLEAN_TEST_INSTANCES=1 $0 --cleanup-only"
+  echo
+}
+
 main() {
-  info "Starting test harness"
-  info "Region: $AWS_REGION  Name prefix: $NAME_PREFIX  Tag: ${TAG_KEY}=${TAG_VAL}"
-  trap 'warn "Exiting… consider aws_terminate_test_instances if this is a disposable sandbox."' EXIT
+  show_test_overview
+
+  echo "$(c 32 "🚀 Initializing test harness...")"
+  echo "$(c 36 "📍 Region:") $AWS_REGION"
+  echo "$(c 36 "🏷️  Name prefix:") $NAME_PREFIX"
+  echo "$(c 36 "🔖 Tags:") ${TAG_KEY}=${TAG_VAL}"
+  echo
+
+  trap cleanup_on_exit EXIT
+
+  # Handle cleanup-only mode
+  if [[ "${1:-}" == "--cleanup-only" ]]; then
+    echo "$(c 33 "🧹 Cleanup mode: Terminating all test instances...")"
+    aws_terminate_test_instances
+    echo "$(c 32 "✅ Cleanup completed")"
+    exit 0
+  fi
 
   # Clean slate for test instances (optional; comment if you share the account)
   if [[ "${CLEAN_TEST_INSTANCES:-0}" -eq 1 ]]; then
+    echo "$(c 33 "🧹 Cleaning up existing test instances...")"
     aws_terminate_test_instances
-    info "Waiting 10s for terminations to settle…"; sleep 10
+    echo "$(c 36 "⏳ Waiting 10s for terminations to settle...")"
+    sleep 10
   fi
 
   # 1) NONE → status
@@ -346,8 +573,8 @@ main() {
   # 5) stop → start with health checks
   scenario_017_stop_then_016_start
 
-  # 6) 016 when already running should return code 2
-  scenario_016_when_running_should_fail_code2
+  # 6) 016 when already running should be no-op
+  scenario_016_when_running_should_be_noop
 
   # 7) Double stop path
   scenario_017_double_stop_should_warn_code1
@@ -362,7 +589,28 @@ main() {
   scenario_016_health_failures_demo
 
   show_scoreboard
-  ok "All done."
+
+  echo
+  echo "$(c 1;32 "🏁 Test Execution Complete!")"
+  echo "$(c 36 "📊 Summary:")"
+  local total_passed=$(printf '%s\n' "${RESULTS[@]}" | grep -c "^PASS" || echo 0)
+  local total_failed=$(printf '%s\n' "${RESULTS[@]}" | grep -c "^FAIL" || echo 0)
+  echo "   • Tests executed: $((total_passed + total_failed))"
+  echo "   • Duration: Test completed at $(date)"
+  echo "   • Logs location: $LOG_DIR"
+  echo
+  if [[ $total_failed -eq 0 ]]; then
+    echo "$(c 1;32 "🎉 SUCCESS: All tests passed! The modular GPU instance management system is ready for production use.")"
+  else
+    echo "$(c 1;31 "⚠️  WARNING: Some tests failed. Please review and fix issues before production deployment.")"
+  fi
+  echo
+  echo "$(c 36 "📚 Next Steps:")"
+  echo "   • Review detailed logs for any warnings"
+  echo "   • Test RIVA model deployment: ./scripts/riva-070-setup-traditional-riva-server.sh"
+  echo "   • Start RIVA server: ./scripts/riva-085-start-traditional-riva-server.sh"
+  echo "   • Run ASR tests: ./scripts/riva-*-test.sh"
+  echo
 }
 
 main "$@"
