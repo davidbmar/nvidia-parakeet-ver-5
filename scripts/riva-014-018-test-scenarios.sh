@@ -288,21 +288,38 @@ fixture_terminated_drift() {
 
 # ---------- Scenarios ----------
 scenario_018_none_brief() {
-  show_test_header "1" "Empty State Detection" "Verify the status command correctly reports when NO instance info exists"
+  show_test_header "1" "Fresh Install Simulation" "Test how the status command behaves on a fresh installation (no local records)"
 
-  # SETUP: Clear all local instance records (simulating fresh install)
-  fixture_none  # This removes artifacts/instance.json and artifacts/state.json
+  echo "  $(c 36 "📋 What this test simulates:")"
+  echo "     You just downloaded the scripts on a new computer"
+  echo "     No local instance records exist yet (artifacts/ folder is empty)"
+  echo "     But your .env file might have leftover settings"
+  echo ""
+  echo "  $(c 33 "⚠️  Expected behavior:")"
+  echo "     Status command should say 'No GPU instance configured' (❌)"
+  echo "     This is CORRECT - it can't find any local instance records"
+  echo "     Exit code 1 means 'nothing configured yet'"
+  echo ""
+
+  # SETUP: Simulate fresh install by clearing local tracking files
+  fixture_none  # Removes artifacts/*.json (but keeps .env)
   ensure_env_bootstrap
 
-  # TEST: Run status check - should detect missing instance info
+  # TEST: Check what status command reports with no local records
   local res log_hint rc
   res="$(run_and_capture "$R018" --brief || true)"; rc="${res%%|*}"
 
-  # VERIFY: Script should exit with code 1 (error) when no instance found
-  # The ❌ symbol in output means "no instance" - this is EXPECTED behavior
-  assert_exit "$rc" 1 "Status command correctly returns error code when no instance configured"
+  # VERIFY: Status correctly reports "nothing configured" (exit code 1)
+  if [[ "$rc" -eq 1 ]]; then
+    echo "  $(c 32 "✅ GOOD! Status correctly reports 'nothing configured'")"
+    echo "     The ❌ error above is EXPECTED - it means fresh install state"
+    record_result "Fresh install detection" "PASS"
+  else
+    echo "  $(c 31 "❌ BAD! Status should report 'nothing configured' (exit code 1, got $rc)")"
+    record_result "Fresh install detection" "FAIL"
+  fi
 
-  show_test_result "${RESULTS[-1]%% *}" "Empty State Detection"
+  show_test_result "${RESULTS[-1]%% *}" "Fresh Install Simulation"
 }
 
 scenario_014_auto_from_none() {
