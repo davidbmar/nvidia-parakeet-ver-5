@@ -268,7 +268,8 @@ fixture_deploy_running() {
 fixture_stopped_from_running() {
   info "Building STOPPED fixture by stopping a running instance"
   local res log_hint rc log
-  res="$(run_and_capture "$R017" --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
+  # Use longer timeout for stop operation - can take 3-5 minutes
+  res="$(run_and_capture "$R017" --timeout=300 --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
   log="$(latest_log "$log_hint")"
   assert_exit "$rc" 0 "017 stop running instance"
   assert_log_contains "$log" 'any(.step=="stop_instance" and .status=="ok")' "017 stop milestone"
