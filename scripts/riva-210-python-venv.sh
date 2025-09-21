@@ -77,7 +77,7 @@ main() {
     mark_step_complete "Python virtual environment and RIVA libraries installed successfully"
 
     # Print next step
-    print_next_step "./scripts/riva-215-verify-riva-grpc.sh" "Verify gRPC connectivity to RIVA server on workers"
+    print_next_step "./scripts/riva-212-worker-riva-setup.sh" "Deploy RIVA server with S3-first optimization"
 }
 
 # =============================================================================
