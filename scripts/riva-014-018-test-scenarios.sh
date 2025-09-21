@@ -220,8 +220,8 @@ run_and_capture() {
 
 # ---------- Fixture builders ----------
 fixture_none() {
-  info "Building NONE fixture (no artifacts, no env)"
-  reset_artifacts
+  info "SETUP: Clearing local instance records to simulate fresh installation"
+  reset_artifacts  # Removes artifacts/*.json files (but keeps .env and AWS instance)
 }
 
 # Bootstrap .env for tests that need minimal config
@@ -288,46 +288,61 @@ fixture_terminated_drift() {
 
 # ---------- Scenarios ----------
 scenario_018_none_brief() {
-  show_test_header "1" "Status Check - NONE State" "Validate status reporting when no instance exists"
+  show_test_header "1" "Empty State Detection" "Verify the status command correctly reports when NO instance info exists"
 
-  fixture_none
+  # SETUP: Clear all local instance records (simulating fresh install)
+  fixture_none  # This removes artifacts/instance.json and artifacts/state.json
   ensure_env_bootstrap
+
+  # TEST: Run status check - should detect missing instance info
   local res log_hint rc
   res="$(run_and_capture "$R018" --brief || true)"; rc="${res%%|*}"
-  assert_exit "$rc" 1 "018 brief reports none (exit 1 when no instance)"
 
-  show_test_result "${RESULTS[-1]%% *}" "Status Check - NONE State"
+  # VERIFY: Script should exit with code 1 (error) when no instance found
+  # The ❌ symbol in output means "no instance" - this is EXPECTED behavior
+  assert_exit "$rc" 1 "Status command correctly returns error code when no instance configured"
+
+  show_test_result "${RESULTS[-1]%% *}" "Empty State Detection"
 }
 
 scenario_014_auto_from_none() {
-  show_test_header "2" "Auto Deploy from NONE" "Test smart orchestrator deployment decision"
+  show_test_header "2" "Smart Deployment Decision" "Test if orchestrator correctly decides to deploy when starting from scratch"
 
   # Only create a new instance if we don't already have one from a previous test run
   if [[ -z "${GPU_INSTANCE_ID:-}" ]] || ! aws ec2 describe-instances --region "$AWS_REGION" --instance-ids "${GPU_INSTANCE_ID}" --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null | grep -qE '^(running|stopped)$'; then
-    fixture_none
+    # SETUP: Simulate starting from scratch (no existing instance)
+    fixture_none  # Clear local records
     ensure_env_bootstrap
+
+    # TEST: Ask orchestrator to automatically decide what to do
     local res log_hint rc log
     res="$(run_and_capture "$R014" --auto --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
     log="$(latest_log "$log_hint")"
-    assert_exit "$rc" 0 "014 auto chooses deploy"
-    assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "014 milestone deployed"
+
+    # VERIFY: Orchestrator should choose to deploy a new instance
+    assert_exit "$rc" 0 "Orchestrator correctly decides to deploy when no instance exists"
+    assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "Deployment completes successfully"
   else
-    info "Using existing instance $GPU_INSTANCE_ID, skipping deployment"
-    record_result "014 auto chooses deploy" "PASS"
+    info "Reusing existing instance $GPU_INSTANCE_ID from previous test run"
+    record_result "Smart deployment decision" "PASS"
   fi
 
-  show_test_result "${RESULTS[-1]%% *}" "Auto Deploy from NONE"
+  show_test_result "${RESULTS[-1]%% *}" "Smart Deployment Decision"
 }
 
 scenario_015_idempotent_on_existing() {
-  show_test_header "3" "Deploy Idempotency" "Ensure deploy script rejects duplicate deployments"
+  show_test_header "3" "Duplicate Prevention" "Verify deploy script prevents creating duplicate instances"
 
+  # TEST: Try to deploy when an instance already exists
+  # EXPECTED: Script should REFUSE to create a second instance
   local res rc
-  # Use a shorter timeout for idempotency check - it should fail quickly (within 10 seconds)
   res="$(run_and_capture "$R015" --timeout=10 --yes || true)"; rc="${res%%|*}"
-  assert_exit "$rc" 1 "015 idempotent (instance already exists)"
 
-  show_test_result "${RESULTS[-1]%% *}" "Deploy Idempotency"
+  # VERIFY: Script should exit with code 1 (refusing to create duplicate)
+  # This PREVENTS accidentally creating multiple expensive GPU instances
+  assert_exit "$rc" 1 "Deploy script correctly refuses to create duplicate instance"
+
+  show_test_result "${RESULTS[-1]%% *}" "Duplicate Prevention"
 }
 
 scenario_018_running_brief() {
