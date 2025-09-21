@@ -105,8 +105,8 @@ RIVA APPROACH:
 ❌ Slower startup (model loading required)
 ❌ More complex deployment
 
-📋 REORGANIZED S3 STRUCTURE:
-════════════════════════════
+📋 ACTUAL S3 STRUCTURE:
+═══════════════════════
 
 s3://dbm-cf-2-web/bintarball/
 ├── nim-containers/                       # NIM: Self-contained containers
@@ -115,11 +115,13 @@ s3://dbm-cf-2-web/bintarball/
 │   │   ├── parakeet-tdt-0.6b-v2-1.0.0.tar.gz          # 11.0GB
 │   │   └── parakeet-ctc-1.1b-asr-1.0.0.tar            # 13.3GB
 │   └── metadata/
-├── riva/                                 # RIVA: Server containers
-│   └── riva-speech-2.19.0.tar.gz                      # 20GB
-└── models/                               # RIVA: Model files
-    ├── Conformer-CTC-L_spe1024_ml_cs_es-en-US_1.1.riva    # 347MB
-    └── Conformer-CTC-XL_spe-128_en-US_Riva-ASR-SET-4.0.riva # 1.5GB
+├── riva-containers/                      # RIVA: Server containers
+│   ├── riva-speech-2.15.0.tar.gz                      # 6.3GB
+│   ├── riva-speech-2.19.0.tar.gz                      # 19.8GB
+│   └── riva_quickstart_2.19.0.zip                     # 74.7KB
+└── riva-models/                          # RIVA: Model files
+    └── parakeet/
+        └── parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz  # 3.7GB
 
 🎯 DEPLOYMENT STRATEGY DECISIONS:
 ═════════════════════════════════
