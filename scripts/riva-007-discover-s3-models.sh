@@ -589,8 +589,7 @@ if [[ "$update_env" =~ ^[Yy]$ ]]; then
         update_env_value "NIM_CONTAINER_SIZE" "${NIM_SIZES[$SELECTED_CONTAINER]}"
         update_env_value "NIM_CONTAINER_PATH" "${NIM_CONTAINERS[$SELECTED_CONTAINER]}"
 
-        # Set deployment strategy to use NIM
-        update_env_value "DEPLOYMENT_STRATEGY" "1"  # NIM strategy
+        # Configure NIM deployment approach (preserve existing DEPLOYMENT_STRATEGY)
         update_env_value "USE_NIM_DEPLOYMENT" "true"
         update_env_value "USE_RIVA_DEPLOYMENT" "false"
 
@@ -606,13 +605,12 @@ if [[ "$update_env" =~ ^[Yy]$ ]]; then
         riva_model_name=$(basename "$SELECTED_MODEL" .riva)
         update_env_value "RIVA_MODEL" "$riva_model_name"
 
-        # Set deployment strategy to use traditional RIVA
-        update_env_value "DEPLOYMENT_STRATEGY" "2"  # Traditional RIVA strategy
+        # Configure traditional RIVA deployment approach (preserve existing DEPLOYMENT_STRATEGY)
         update_env_value "USE_NIM_DEPLOYMENT" "false"
         update_env_value "USE_RIVA_DEPLOYMENT" "true"
     fi
 
-    log_success ".env file updated with deployment strategy configuration"
+    log_success ".env file updated with deployment approach configuration"
 else
     log_info "Skipping .env file update"
 fi
