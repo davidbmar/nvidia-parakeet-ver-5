@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-09-21T05:30:32+00:00",
+  "script": "riva-200-bootstrap",
+  "system": {
+    "hostname": "ip-172-31-44-30",
+    "user": "ubuntu",
+    "pwd": "/home/ubuntu/event-b/nvidia-parakeet-ver-6",
+    "os": "Linux",
+    "arch": "x86_64",
+    "kernel": "6.14.0-1012-aws"
+  },
+  "project": {
+    "root": "/home/ubuntu/event-b/nvidia-parakeet-ver-6",
+    "git_branch": "main",
+    "git_commit": "39cd9e29a435f1fff3c493f86cd0f06fd332bfb2"
+  }
+}

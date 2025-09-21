@@ -1,0 +1,5 @@
+status=failure
+log=/home/ubuntu/event-b/nvidia-parakeet-ver-6/logs/075-validate-models-20250920-223217.log
+timestamp=2025-09-20T22:32:17+0000
+schema=1
+exit_code=20

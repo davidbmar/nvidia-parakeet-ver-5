@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+echo "[SHIM] Called with args: $*" >&2
+args=("$@")
+need_repo=1
+for a in "${args[@]}"; do
+  [[ "$a" == --model-repository=* ]] && need_repo=0 && break
+  [[ "$a" == "--model-repository" ]] && need_repo=0 && break
+done
+if [ "$need_repo" -eq 1 ]; then
+  args+=("--model-repository=/opt/tritonserver/models")
+  echo "[SHIM] Injected --model-repository=/opt/tritonserver/models" >&2
+fi
+echo "[SHIM] Executing: /opt/tritonserver/bin/tritonserver ${args[*]}" >&2
+exec /opt/tritonserver/bin/tritonserver "${args[@]}"
