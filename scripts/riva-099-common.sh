@@ -43,17 +43,26 @@ LOCK_ACQUIRED=false
 # Cleanup function called on script exit
 cleanup_on_exit() {
     if [ "$CLEANUP_ON_EXIT" = "true" ]; then
-        json_log "${SCRIPT_NAME:-common}" "cleanup" "warn" "Script interrupted, cleaning up"
+        # Only log interruption if we're actually being terminated by a signal
+        # Exit codes 130 (SIGINT), 143 (SIGTERM), etc indicate signal termination
+        local exit_code=$?
+        if [ $exit_code -ge 128 ]; then
+            json_log "${SCRIPT_NAME:-common}" "cleanup" "warn" "Script interrupted, cleaning up"
+        fi
 
         # Release lock if we acquired it
         if [ "$LOCK_ACQUIRED" = "true" ]; then
             local lock_file="$LOCK_DIR/riva-gpu.lock"
             rm -rf "$lock_file" 2>/dev/null || true
-            json_log "${SCRIPT_NAME:-common}" "cleanup" "ok" "Lock released during cleanup"
+            if [ $exit_code -ge 128 ]; then
+                json_log "${SCRIPT_NAME:-common}" "cleanup" "ok" "Lock released during cleanup"
+            fi
         fi
 
-        # Log final state
-        json_log "${SCRIPT_NAME:-common}" "exit" "warn" "Script terminated by signal"
+        # Only log signal termination if actually terminated by signal
+        if [ $exit_code -ge 128 ]; then
+            json_log "${SCRIPT_NAME:-common}" "exit" "warn" "Script terminated by signal"
+        fi
     fi
 }
 
