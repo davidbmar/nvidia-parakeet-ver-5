@@ -29,7 +29,7 @@ COLOR="${COLOR:-1}"
 # ---------- Pretty ----------
 c() { # color helper
   local code="$1"; shift
-  if [[ "${COLOR}" == "1" ]]; then printf "\033[%sm%s\033[0m" "$code" "$*"; else printf "%s" "$*"; fi
+  if [[ "${COLOR}" == "1" ]]; then printf "\e[%sm%s\e[0m" "$code" "$*"; else printf "%s" "$*"; fi
 }
 ok()   { echo -e "$(c 32 "[OK]")  $*"; }
 warn() { echo -e "$(c 33 "[WARN]") $*"; }
@@ -58,7 +58,7 @@ show_test_header() {
   ((CURRENT_TEST++))
   echo
   echo "$(c 34 "┌────────────────────────────────────────────────────────────────────────┐")"
-  echo "$(c 34 "│") $(c 1;33 "Test $test_num/$TOTAL_TESTS:") $(c 1;37 "$test_name")$(printf "%*s" $((60 - ${#test_name})) "") $(c 34 "│")"
+  echo "$(c 34 "│") $(c 33 "Test $test_num/$TOTAL_TESTS:") $(c 37 "$test_name")$(printf "%*s" $((60 - ${#test_name})) "") $(c 34 "│")"
   echo "$(c 34 "│") $(c 36 "$test_desc")$(printf "%*s" $((70 - ${#test_desc})) "") $(c 34 "│")"
   echo "$(c 34 "└────────────────────────────────────────────────────────────────────────┘")"
 }
@@ -76,7 +76,7 @@ show_test_result() {
 show_scoreboard() {
   echo
   echo "$(c 34 "╔══════════════════════════════════════════════════════════════════════╗")"
-  echo "$(c 34 "║")                    $(c 1;33 "🏁 Final Test Results")                        $(c 34 "║")"
+  echo "$(c 34 "║")                    $(c 33 "🏁 Final Test Results")                        $(c 34 "║")"
   echo "$(c 34 "╚══════════════════════════════════════════════════════════════════════╝")"
   echo
   local pass=0 fail=0
@@ -92,10 +92,10 @@ show_scoreboard() {
   echo
   echo "$(c 34 "────────────────────────────────────────────────────────────────────────")"
   if [[ $fail -eq 0 ]]; then
-    echo "$(c 1;32 "🎉 ALL TESTS PASSED!") Total: $pass/$((pass + fail))"
+    echo "$(c 32 "🎉 ALL TESTS PASSED!") Total: $pass/$((pass + fail))"
     echo "$(c 32 "✅ GPU Instance Management System is working correctly")"
   else
-    echo "$(c 1;31 "⚠️  SOME TESTS FAILED:") Passed: $(c 32 "$pass") Failed: $(c 31 "$fail") Total: $((pass + fail))"
+    echo "$(c 31 "⚠️  SOME TESTS FAILED:") Passed: $(c 32 "$pass") Failed: $(c 31 "$fail") Total: $((pass + fail))"
     echo "$(c 33 "⚡ Please review failed tests and fix issues before production use")"
   fi
   echo "$(c 34 "────────────────────────────────────────────────────────────────────────")"
@@ -419,19 +419,19 @@ scenario_016_health_failures_demo() {
 show_test_overview() {
   echo
   echo "$(c 34 "╔════════════════════════════════════════════════════════════════════════╗")"
-  echo "$(c 34 "║")                 $(c 1;33 "🧪 GPU Instance Manager Test Suite")                   $(c 34 "║")"
+  echo "$(c 34 "║")                 $(c 33 "🧪 GPU Instance Manager Test Suite")                   $(c 34 "║")"
   echo "$(c 34 "╚════════════════════════════════════════════════════════════════════════╝")"
   echo
-  echo "$(c 1;36 "📋 Test Plan Overview:")"
+  echo "$(c 36 "📋 Test Plan Overview:")"
   echo "This comprehensive test suite validates the modular GPU instance management"
   echo "system through real AWS EC2 operations and state transitions."
   echo
-  echo "$(c 1;33 "⚠️  WARNING: This test creates REAL AWS resources and incurs costs!")"
+  echo "$(c 33 "⚠️  WARNING: This test creates REAL AWS resources and incurs costs!")"
   echo "   • Instance Type: g4dn.xlarge (\$0.526/hour)"
   echo "   • Estimated Total Cost: ~\$0.50 (test runtime ~1 hour)"
   echo "   • Test instances will be automatically cleaned up"
   echo
-  echo "$(c 1;32 "📊 Test Scenarios (10 total):")"
+  echo "$(c 32 "📊 Test Scenarios (10 total):")"
   echo
   echo "  $(c 33 "1.") $(c 32 "🔍") $(c 1 "Status Check - NONE State")"
   echo "      └ Validates status reporting when no instance exists"
@@ -473,7 +473,7 @@ show_test_overview() {
   echo "       └ Demonstrates health check failure handling"
   echo "       └ Expected: Controlled degradation, clear error reporting"
   echo
-  echo "$(c 1;34 "🛠️  What Gets Tested:")"
+  echo "$(c 34 "🛠️  What Gets Tested:")"
   echo "   • AWS EC2 instance lifecycle (deploy/start/stop/terminate)"
   echo "   • SSH connectivity and health monitoring"
   echo "   • GPU detection and Docker runtime validation"
@@ -482,25 +482,25 @@ show_test_overview() {
   echo "   • Error handling and idempotent operations"
   echo "   • JSON structured logging and monitoring integration"
   echo
-  echo "$(c 1;35 "⏱️  Estimated Timeline:")"
+  echo "$(c 35 "⏱️  Estimated Timeline:")"
   echo "   • Instance deployment: ~3-5 minutes"
   echo "   • Lifecycle operations: ~2-3 minutes each"
   echo "   • Total estimated runtime: 45-60 minutes"
   echo "   • Cleanup and termination: ~2 minutes"
   echo
-  echo "$(c 1;31 "💰 Cost Breakdown:")"
+  echo "$(c 31 "💰 Cost Breakdown:")"
   echo "   • Instance runtime: ~\$0.40-0.50"
   echo "   • EBS storage: ~\$0.02"
   echo "   • Data transfer: ~\$0.01"
   echo "   • Total estimated cost: \$0.43-0.53"
   echo
-  echo "$(c 1;36 "🎯 Success Criteria:")"
+  echo "$(c 36 "🎯 Success Criteria:")"
   echo "   • All 9 core tests pass (10th is optional)"
   echo "   • No resource leaks or orphaned instances"
   echo "   • Proper cost tracking and reporting"
   echo "   • Clean state transitions and error handling"
   echo
-  printf "$(c 1;33 "Continue with test execution? [y/N]: ")"
+  printf "$(c 33 "Continue with test execution? [y/N]: ")"
   read -r response
   if [[ ! "$response" =~ ^[Yy]$ ]]; then
     echo "$(c 33 "Test execution cancelled by user")"
@@ -591,7 +591,7 @@ main() {
   show_scoreboard
 
   echo
-  echo "$(c 1;32 "🏁 Test Execution Complete!")"
+  echo "$(c 32 "🏁 Test Execution Complete!")"
   echo "$(c 36 "📊 Summary:")"
   local total_passed=$(printf '%s\n' "${RESULTS[@]}" | grep -c "^PASS" || echo 0)
   local total_failed=$(printf '%s\n' "${RESULTS[@]}" | grep -c "^FAIL" || echo 0)
@@ -600,9 +600,9 @@ main() {
   echo "   • Logs location: $LOG_DIR"
   echo
   if [[ $total_failed -eq 0 ]]; then
-    echo "$(c 1;32 "🎉 SUCCESS: All tests passed! The modular GPU instance management system is ready for production use.")"
+    echo "$(c 32 "🎉 SUCCESS: All tests passed! The modular GPU instance management system is ready for production use.")"
   else
-    echo "$(c 1;31 "⚠️  WARNING: Some tests failed. Please review and fix issues before production deployment.")"
+    echo "$(c 31 "⚠️  WARNING: Some tests failed. Please review and fix issues before production deployment.")"
   fi
   echo
   echo "$(c 36 "📚 Next Steps:")"
