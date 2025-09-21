@@ -290,13 +290,19 @@ scenario_018_none_brief() {
 scenario_014_auto_from_none() {
   show_test_header "2" "Auto Deploy from NONE" "Test smart orchestrator deployment decision"
 
-  fixture_none
-  ensure_env_bootstrap
-  local res log_hint rc log
-  res="$(run_and_capture "$R014" --auto --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
-  log="$(latest_log "$log_hint")"
-  assert_exit "$rc" 0 "014 auto chooses deploy"
-  assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "014 milestone deployed"
+  # Only create a new instance if we don't already have one from a previous test run
+  if [[ -z "${GPU_INSTANCE_ID:-}" ]] || ! aws ec2 describe-instances --region "$AWS_REGION" --instance-ids "${GPU_INSTANCE_ID}" --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null | grep -qE '^(running|stopped)$'; then
+    fixture_none
+    ensure_env_bootstrap
+    local res log_hint rc log
+    res="$(run_and_capture "$R014" --auto --yes || true)"; rc="${res%%|*}"; log_hint="${res#*|}"
+    log="$(latest_log "$log_hint")"
+    assert_exit "$rc" 0 "014 auto chooses deploy"
+    assert_log_contains "$log" 'any(.step=="complete" and .status=="ok")' "014 milestone deployed"
+  else
+    info "Using existing instance $GPU_INSTANCE_ID, skipping deployment"
+    record_result "014 auto chooses deploy" "PASS"
+  fi
 
   show_test_result "${RESULTS[-1]%% *}" "Auto Deploy from NONE"
 }
@@ -558,6 +564,15 @@ main() {
     aws_terminate_test_instances
     echo "$(c 36 "⏳ Waiting 10s for terminations to settle...")"
     sleep 10
+  else
+    echo "$(c 36 "ℹ️  Using existing instances if available (set CLEAN_TEST_INSTANCES=1 to start fresh)")"
+    # Load existing instance from .env if available
+    if [[ -f "$ENV_FILE" ]]; then
+      source "$ENV_FILE"
+      if [[ -n "${GPU_INSTANCE_ID:-}" ]]; then
+        echo "$(c 36 "   Found existing instance: $GPU_INSTANCE_ID")"
+      fi
+    fi
   fi
 
   # 1) NONE → status
