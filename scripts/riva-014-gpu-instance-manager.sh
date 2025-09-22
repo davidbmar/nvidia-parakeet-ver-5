@@ -23,6 +23,7 @@ AUTO_MODE=false
 SKIP_CONFIRM=false
 DRY_RUN=false
 INSTANCE_ID=""
+SHOW_HELP=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -67,8 +68,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            show_help
-            exit 0
+            SHOW_HELP=true
             ;;
         *)
             echo "Unknown option: $1"
@@ -81,6 +81,35 @@ done
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
+require_instance_id() {
+    local instance_id="$1"
+    if [[ -z "$instance_id" || ! "$instance_id" =~ ^i-[a-z0-9]+$ ]]; then
+        echo -e "${RED}❌ Instance ID required or invalid: '$instance_id'${NC}" >&2
+        echo "Expected format: i-xxxxxxxxx" >&2
+        exit 65
+    fi
+}
+
+build_common_flags() {
+    local flags=()
+    if [ "$DRY_RUN" = "true" ]; then
+        flags+=("--dry-run")
+    fi
+    if [ "$SKIP_CONFIRM" = "true" ]; then
+        flags+=("--yes")
+    fi
+    # Only output if we have flags
+    if [ ${#flags[@]} -gt 0 ]; then
+        printf '%s\n' "${flags[@]}"
+    fi
+}
+
+print_cmd() {
+    local arr=("$@")
+    printf '%q ' "${arr[@]}"
+    echo
+}
 
 show_help() {
     cat << EOF
@@ -319,75 +348,179 @@ execute_action() {
     local action="${1}"
     local instance_id="${2}"
 
-    # Build command arguments
-    local cmd_args=""
-    if [ "$DRY_RUN" = "true" ]; then
-        cmd_args="$cmd_args --dry-run"
+    # Handle deploy action warning about ignored instance-id
+    if [ "$action" = "deploy" ] && [ -n "$INSTANCE_ID" ] && [ "$INSTANCE_ID" != "$instance_id" ]; then
+        echo -e "${YELLOW}Note: Ignoring --instance-id for deploy action${NC}"
     fi
-    if [ "$SKIP_CONFIRM" = "true" ]; then
-        cmd_args="$cmd_args --yes"
-    fi
-    if [ -n "$instance_id" ]; then
-        cmd_args="$cmd_args --instance-id $instance_id"
-    fi
+
+    local cmd=()
+    local cmd_stop=()
+    local cmd_start=()
 
     case "$action" in
         deploy)
             echo -e "${BLUE}Executing: Deploy new instance${NC}"
             echo "----------------------------------------"
+            # Never pass --instance-id to deploy
+            cmd=("$SCRIPT_DIR/riva-015-deploy-gpu-instance.sh")
+            mapfile -t flags < <(build_common_flags)
+            if [ ${#flags[@]} -gt 0 ]; then
+                cmd+=("${flags[@]}")
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute: $(print_cmd "${cmd[@]}")"
+                exit 0
+            fi
+
             if [ -f "$SCRIPT_DIR/riva-015-deploy-gpu-instance.sh" ]; then
-                "$SCRIPT_DIR/riva-015-deploy-gpu-instance.sh" $cmd_args
+                if ! "${cmd[@]}"; then
+                    local rc=$?
+                    echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                    exit "$rc"
+                fi
             else
                 # Fallback to original script
-                "$SCRIPT_DIR/riva-015-deploy-or-restart-aws-gpu-instance.sh" $cmd_args
+                cmd=("$SCRIPT_DIR/riva-015-deploy-or-restart-aws-gpu-instance.sh")
+                if [ ${#flags[@]} -gt 0 ]; then
+                    cmd+=("${flags[@]}")
+                fi
+                if ! "${cmd[@]}"; then
+                    local rc=$?
+                    echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                    exit "$rc"
+                fi
             fi
             ;;
 
         start)
+            require_instance_id "$instance_id"
             echo -e "${BLUE}Executing: Start instance${NC}"
             echo "----------------------------------------"
-            "$SCRIPT_DIR/riva-016-start-gpu-instance.sh" $cmd_args
+            cmd=("$SCRIPT_DIR/riva-016-start-gpu-instance.sh" "--instance-id" "$instance_id")
+            mapfile -t flags < <(build_common_flags)
+            if [ ${#flags[@]} -gt 0 ]; then
+                cmd+=("${flags[@]}")
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute: $(print_cmd "${cmd[@]}")"
+                exit 0
+            fi
+
+            if ! "${cmd[@]}"; then
+                local rc=$?
+                echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                exit "$rc"
+            fi
             ;;
 
         stop)
+            require_instance_id "$instance_id"
             echo -e "${BLUE}Executing: Stop instance${NC}"
             echo "----------------------------------------"
-            "$SCRIPT_DIR/riva-017-stop-gpu-instance.sh" $cmd_args
+            cmd=("$SCRIPT_DIR/riva-017-stop-gpu-instance.sh" "--instance-id" "$instance_id")
+            mapfile -t flags < <(build_common_flags)
+            if [ ${#flags[@]} -gt 0 ]; then
+                cmd+=("${flags[@]}")
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute: $(print_cmd "${cmd[@]}")"
+                exit 0
+            fi
+
+            if ! "${cmd[@]}"; then
+                local rc=$?
+                echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                exit "$rc"
+            fi
             ;;
 
         restart)
+            require_instance_id "$instance_id"
             echo -e "${BLUE}Executing: Restart instance${NC}"
             echo "----------------------------------------"
+            mapfile -t flags < <(build_common_flags)
+            cmd_stop=("$SCRIPT_DIR/riva-017-stop-gpu-instance.sh" "--instance-id" "$instance_id")
+            cmd_start=("$SCRIPT_DIR/riva-016-start-gpu-instance.sh" "--instance-id" "$instance_id")
+            if [ ${#flags[@]} -gt 0 ]; then
+                cmd_stop+=("${flags[@]}")
+                cmd_start+=("${flags[@]}")
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute step 1: $(print_cmd "${cmd_stop[@]}")"
+                echo "Would execute step 2: $(print_cmd "${cmd_start[@]}")"
+                exit 0
+            fi
+
             echo "Step 1: Stopping instance..."
-            "$SCRIPT_DIR/riva-017-stop-gpu-instance.sh" $cmd_args
+            if ! "${cmd_stop[@]}"; then
+                local rc=$?
+                echo -e "${RED}Stop failed (rc=$rc), aborting restart${NC}" >&2
+                exit "$rc"
+            fi
 
             echo ""
             echo "Step 2: Starting instance..."
-            "$SCRIPT_DIR/riva-016-start-gpu-instance.sh" $cmd_args
+            if ! "${cmd_start[@]}"; then
+                local rc=$?
+                echo -e "${RED}Start failed (rc=$rc)${NC}" >&2
+                exit "$rc"
+            fi
             ;;
 
         status)
+            require_instance_id "$instance_id"
             echo -e "${BLUE}Executing: Show status${NC}"
             echo "----------------------------------------"
-            "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" --verbose
+            cmd=("$SCRIPT_DIR/riva-018-status-gpu-instance.sh" "--verbose" "--instance-id" "$instance_id")
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute: $(print_cmd "${cmd[@]}")"
+                exit 0
+            fi
+
+            if ! "${cmd[@]}"; then
+                local rc=$?
+                echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                exit "$rc"
+            fi
             ;;
 
         wait)
+            require_instance_id "$instance_id"
             echo -e "${BLUE}Waiting for state transition...${NC}"
             local current_state=$(get_instance_state "$instance_id")
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would wait for state transition from: $current_state"
+                case "$current_state" in
+                    "pending")
+                        echo "Would execute: aws ec2 wait instance-running --instance-ids $instance_id --region ${AWS_REGION}"
+                        echo "Would execute: $(print_cmd "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" "--brief" "--instance-id" "$instance_id")"
+                        ;;
+                    "stopping")
+                        echo "Would execute: aws ec2 wait instance-stopped --instance-ids $instance_id --region ${AWS_REGION}"
+                        echo "Would execute: $(print_cmd "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" "--brief" "--instance-id" "$instance_id")"
+                        ;;
+                esac
+                exit 0
+            fi
 
             case "$current_state" in
                 "pending")
                     echo "Waiting for instance to start..."
                     aws ec2 wait instance-running --instance-ids "$instance_id" --region "${AWS_REGION}"
                     echo -e "${GREEN}✅ Instance is now running${NC}"
-                    "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" --brief
+                    "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" --brief --instance-id "$instance_id"
                     ;;
                 "stopping")
                     echo "Waiting for instance to stop..."
                     aws ec2 wait instance-stopped --instance-ids "$instance_id" --region "${AWS_REGION}"
                     echo -e "${GREEN}✅ Instance is now stopped${NC}"
-                    "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" --brief
+                    "$SCRIPT_DIR/riva-018-status-gpu-instance.sh" --brief --instance-id "$instance_id"
                     ;;
                 *)
                     echo "Instance is in state: $current_state (no waiting needed)"
@@ -396,10 +529,11 @@ execute_action() {
             ;;
 
         destroy)
+            require_instance_id "$instance_id"
             echo -e "${RED}⚠️  WARNING: Destroy operation${NC}"
             echo "----------------------------------------"
 
-            if [ "$SKIP_CONFIRM" = "false" ]; then
+            if [ "$SKIP_CONFIRM" = "false" ] && [ "$DRY_RUN" = "false" ]; then
                 echo "This will PERMANENTLY TERMINATE the instance and delete all data!"
                 echo -n "Type 'DESTROY' to confirm: "
                 read -r confirm_text
@@ -409,13 +543,37 @@ execute_action() {
                 fi
             fi
 
+            mapfile -t flags < <(build_common_flags)
             if [ -f "$SCRIPT_DIR/riva-999-destroy-all.sh" ]; then
-                "$SCRIPT_DIR/riva-999-destroy-all.sh" $cmd_args
+                cmd=("$SCRIPT_DIR/riva-999-destroy-all.sh" "--instance-id" "$instance_id")
+                if [ ${#flags[@]} -gt 0 ]; then
+                    cmd+=("${flags[@]}")
+                fi
             else
-                # Direct termination
+                cmd=(aws ec2 terminate-instances --instance-ids "$instance_id" --region "${AWS_REGION}")
+            fi
+
+            if [ "$DRY_RUN" = "true" ]; then
+                echo "Would execute: $(print_cmd "${cmd[@]}")"
+                exit 0
+            fi
+
+            if [[ "${cmd[0]}" == "aws" ]]; then
+                # Direct AWS termination
                 echo "Terminating instance $instance_id..."
-                aws ec2 terminate-instances --instance-ids "$instance_id" --region "${AWS_REGION}"
+                if ! "${cmd[@]}"; then
+                    local rc=$?
+                    echo -e "${RED}Termination failed (rc=$rc)${NC}" >&2
+                    exit "$rc"
+                fi
                 echo -e "${GREEN}✅ Instance termination initiated${NC}"
+            else
+                # Use destroy script
+                if ! "${cmd[@]}"; then
+                    local rc=$?
+                    echo -e "${RED}Sub-script failed (rc=$rc)${NC}" >&2
+                    exit "$rc"
+                fi
             fi
             ;;
 
@@ -431,10 +589,14 @@ show_cost_reminder() {
     local instance_type="${2:-g4dn.xlarge}"
 
     if [ "$current_state" = "running" ]; then
-        local hourly_rate=$(get_instance_hourly_rate "$instance_type")
+        local hourly_rate=$(get_instance_hourly_rate "$instance_type" 2>/dev/null || echo "")
         echo ""
         echo -e "${YELLOW}💰 Cost Reminder:${NC}"
-        echo "  Instance is running at \$$hourly_rate/hour"
+        if [ -n "$hourly_rate" ]; then
+            echo "  Instance is running at \$$hourly_rate/hour"
+        else
+            echo "  Instance is running - charges apply per hour"
+        fi
         echo "  Remember to stop when not in use: $0 --stop"
     elif [ "$current_state" = "stopped" ]; then
         echo ""
@@ -449,6 +611,12 @@ show_cost_reminder() {
 # ============================================================================
 
 main() {
+    # Handle help first
+    if [ "$SHOW_HELP" = "true" ]; then
+        show_help
+        exit 0
+    fi
+
     # Initialize logging
     init_log "$SCRIPT_NAME"
 
@@ -500,7 +668,7 @@ main() {
         show_interactive_menu "$current_state" "$INSTANCE_ID"
     fi
 
-    # Validate action against current state
+    # Validate action against current state and instance ID requirements
     case "$ACTION" in
         deploy)
             if [ "$current_state" != "none" ]; then
@@ -514,24 +682,27 @@ main() {
                 exit 1
             fi
             ;;
-        start)
+        start|stop|restart|status|wait|destroy)
             if [ "$current_state" = "none" ]; then
-                echo -e "${RED}❌ No instance found to start${NC}"
-                echo "Use --deploy to create a new instance"
+                echo -e "${RED}❌ No instance found for $ACTION action${NC}"
+                echo "Use --deploy to create a new instance first"
                 exit 1
-            elif [ "$current_state" = "running" ]; then
-                echo -e "${YELLOW}Instance is already running${NC}"
-                ACTION="status"
             fi
-            ;;
-        stop)
-            if [ "$current_state" = "none" ]; then
-                echo -e "${RED}❌ No instance found to stop${NC}"
-                exit 1
-            elif [ "$current_state" = "stopped" ]; then
-                echo -e "${YELLOW}Instance is already stopped${NC}"
-                ACTION="status"
-            fi
+            # Additional state-specific validations
+            case "$ACTION" in
+                start)
+                    if [ "$current_state" = "running" ]; then
+                        echo -e "${YELLOW}Instance is already running${NC}"
+                        ACTION="status"
+                    fi
+                    ;;
+                stop)
+                    if [ "$current_state" = "stopped" ]; then
+                        echo -e "${YELLOW}Instance is already stopped${NC}"
+                        ACTION="status"
+                    fi
+                    ;;
+            esac
             ;;
     esac
 
