@@ -26,6 +26,43 @@ REQUIRED_VARS=(
 : "${FORCE_DOWNLOAD:=0}"
 : "${CHECKSUM_VALIDATION:=1}"
 : "${ARTIFACT_RETENTION_DAYS:=90}"
+: "${REFERENCE_ONLY:=0}"
+
+# Function to create reference-only staging (no download)
+create_reference_staging() {
+    begin_step "Create reference-only staging"
+
+    local work_dir="/tmp/riva-model-prep-${RUN_ID}"
+    log "Creating work directory: $work_dir"
+    mkdir -p "$work_dir"
+
+    # Get model metadata from S3 without downloading
+    log "Getting model metadata from S3: ${RIVA_ASR_MODEL_S3_URI}"
+
+    local expected_size_bytes
+    local bucket_name=$(echo "${RIVA_ASR_MODEL_S3_URI}" | sed 's|s3://||' | cut -d'/' -f1)
+    local object_key=$(echo "${RIVA_ASR_MODEL_S3_URI}" | sed 's|s3://[^/]*/||')
+    debug "S3 bucket: $bucket_name"
+    debug "S3 key: $object_key"
+
+    if expected_size_bytes=$(unset AWS_PROFILE; aws s3api head-object --bucket "$bucket_name" \
+        --key "$object_key" --region us-east-2 \
+        --query 'ContentLength' --output text); then
+        local expected_size_mb=$((expected_size_bytes / 1024 / 1024))
+        log "Model size: ${expected_size_mb}MB (${expected_size_bytes} bytes)"
+    else
+        err "Cannot access model in S3: ${RIVA_ASR_MODEL_S3_URI}"
+        return 1
+    fi
+
+    # Store metadata without downloading
+    echo "$work_dir" > "${RIVA_STATE_DIR}/model_work_dir"
+    echo "${RIVA_ASR_MODEL_S3_URI}" > "${RIVA_STATE_DIR}/source_model_s3_uri"
+    echo "$expected_size_bytes" > "${RIVA_STATE_DIR}/source_model_size"
+
+    log "Reference staging created for existing S3 model"
+    end_step
+}
 
 # Function to download and validate source model with resumable support
 download_source_model() {
@@ -42,9 +79,9 @@ download_source_model() {
 
     # Get expected file size for progress tracking
     local expected_size_bytes
-    if expected_size_bytes=$(aws s3api head-object --bucket "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f3)" \
+    if expected_size_bytes=$(unset AWS_PROFILE; aws s3api head-object --bucket "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f3)" \
         --key "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f4-)" \
-        --query 'ContentLength' --output text 2>/dev/null); then
+        --region us-east-2 --query 'ContentLength' --output text 2>/dev/null); then
         local expected_size_mb=$((expected_size_bytes / 1024 / 1024))
         log "Expected download size: ${expected_size_mb}MB"
     fi
@@ -80,9 +117,9 @@ download_source_model() {
     while [ $retry_count -lt $max_retries ]; do
         log "Download attempt $((retry_count + 1))/$max_retries..."
 
-        # Use AWS CLI with progress if available
-        if aws s3 cp "${RIVA_ASR_MODEL_S3_URI}" "$source_file" \
-            --cli-read-timeout 300 --cli-connect-timeout 60; then
+        # Use AWS CLI with explicit region and no profile
+        if (unset AWS_PROFILE; aws s3 cp "${RIVA_ASR_MODEL_S3_URI}" "$source_file" \
+            --region us-east-2 --cli-read-timeout 300 --cli-connect-timeout 60); then
             log "Source model downloaded successfully"
             break
         else
@@ -210,6 +247,81 @@ compute_checksums() {
     end_step
 }
 
+# Function to create reference-only metadata (no local files)
+create_reference_metadata() {
+    begin_step "Create reference metadata"
+
+    local work_dir
+    local source_s3_uri
+    local source_size_bytes
+    work_dir=$(cat "${RIVA_STATE_DIR}/model_work_dir")
+    source_s3_uri=$(cat "${RIVA_STATE_DIR}/source_model_s3_uri")
+    source_size_bytes=$(cat "${RIVA_STATE_DIR}/source_model_size")
+
+    local artifact_file="${work_dir}/artifact.json"
+    local timestamp
+    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Create metadata referencing existing S3 model
+    cat > "$artifact_file" << EOF
+{
+  "artifact_id": "${RIVA_ASR_MODEL_NAME}-${MODEL_VERSION}",
+  "created_at": "${timestamp}",
+  "staging_mode": "reference_only",
+  "model": {
+    "name": "${RIVA_ASR_MODEL_NAME}",
+    "version": "${MODEL_VERSION}",
+    "language_code": "${RIVA_ASR_LANG_CODE}",
+    "type": "speech_recognition",
+    "architecture": "rnnt",
+    "description": "Parakeet RNNT model for ${RIVA_ASR_LANG_CODE} speech recognition"
+  },
+  "source": {
+    "uri": "${source_s3_uri}",
+    "filename": "$(basename "$source_s3_uri")",
+    "size_bytes": ${source_size_bytes},
+    "size_human": "$((source_size_bytes / 1024 / 1024))MB",
+    "location": "s3_existing",
+    "status": "verified"
+  },
+  "deployment": {
+    "environment": "${ENV}",
+    "s3_bucket": "${NVIDIA_DRIVERS_S3_BUCKET}",
+    "s3_prefix": "${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}",
+    "retention_days": ${ARTIFACT_RETENTION_DAYS},
+    "staging_complete": true,
+    "reference_mode": true
+  },
+  "build_info": {
+    "script": "${SCRIPT_ID}",
+    "run_id": "${RUN_ID}",
+    "build_host": "$(hostname)",
+    "aws_region": "${AWS_REGION}",
+    "preparation_timestamp": "${timestamp}"
+  },
+  "validation": {
+    "s3_access_verified": true,
+    "model_size_confirmed": true,
+    "reference_staging": true
+  }
+}
+EOF
+
+    log "Reference metadata created: $artifact_file"
+    echo "$artifact_file" > "${RIVA_STATE_DIR}/artifact_metadata"
+
+    # Display key information
+    log "Model Details:"
+    log "  • Name: ${RIVA_ASR_MODEL_NAME}"
+    log "  • Version: ${MODEL_VERSION}"
+    log "  • Language: ${RIVA_ASR_LANG_CODE}"
+    log "  • Source: Existing S3 model"
+    log "  • Size: $((source_size_bytes / 1024 / 1024))MB"
+    log "  • Status: Reference verified ✓"
+
+    end_step
+}
+
 # Function to create comprehensive artifact metadata with download info
 create_artifact_metadata() {
     begin_step "Create artifact metadata"
@@ -309,6 +421,48 @@ EOF
     end_step
 }
 
+# Function to upload reference metadata to S3
+upload_reference_metadata() {
+    begin_step "Upload reference metadata to S3"
+
+    local work_dir
+    local artifact_file
+    work_dir=$(cat "${RIVA_STATE_DIR}/model_work_dir")
+    artifact_file=$(cat "${RIVA_STATE_DIR}/artifact_metadata")
+
+    local s3_prefix="${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}"
+    local s3_base="s3://${NVIDIA_DRIVERS_S3_BUCKET}/${s3_prefix}"
+    local upload_timestamp
+    upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log "Uploading reference metadata to: $s3_base"
+
+    # Upload artifact metadata
+    if (unset AWS_PROFILE; aws s3 cp "$artifact_file" "${s3_base}/artifact.json" --content-type "application/json" --region us-east-2); then
+        log "Reference metadata uploaded successfully"
+    else
+        err "Failed to upload reference metadata"
+        return 1
+    fi
+
+    # Create completion marker for reference mode
+    local completion_marker="${work_dir}/staging_complete.txt"
+    echo "Reference staging completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$completion_marker"
+    echo "Mode: reference_only" >> "$completion_marker"
+    echo "Source: ${RIVA_ASR_MODEL_S3_URI}" >> "$completion_marker"
+    echo "Run ID: ${RUN_ID}" >> "$completion_marker"
+    echo "Next step: Use existing model directly" >> "$completion_marker"
+    (unset AWS_PROFILE; aws s3 cp "$completion_marker" "${s3_base}/staging_complete.txt" --content-type "text/plain" --region us-east-2)
+
+    # Save S3 location for next script
+    echo "$s3_base" > "${RIVA_STATE_DIR}/s3_staging_uri"
+    echo "$upload_timestamp" > "${RIVA_STATE_DIR}/upload_timestamp"
+
+    log "Reference metadata uploaded to: $s3_base"
+
+    end_step
+}
+
 # Function to upload to S3 staging area with progress tracking
 upload_to_s3_staging() {
     begin_step "Upload to S3 staging area"
@@ -370,9 +524,9 @@ EOF
 
     # Upload source archive with progress
     log "Uploading source archive ($(du -h "$source_file" | cut -f1))..."
-    if aws s3 cp "$source_file" "${s3_base}/source/$(basename "$source_file")" \
+    if (unset AWS_PROFILE; aws s3 cp "$source_file" "${s3_base}/source/$(basename "$source_file")" \
         --metadata "artifact-type=source,model-name=${RIVA_ASR_MODEL_NAME},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
-        --storage-class STANDARD; then
+        --storage-class STANDARD --region us-east-2); then
         log "Source archive uploaded successfully"
     else
         err "Failed to upload source archive"
@@ -381,9 +535,9 @@ EOF
 
     # Upload primary .riva file with progress
     log "Uploading primary model file ($(du -h "$primary_riva_file" | cut -f1))..."
-    if aws s3 cp "$primary_riva_file" "${s3_base}/models/$(basename "$primary_riva_file")" \
+    if (unset AWS_PROFILE; aws s3 cp "$primary_riva_file" "${s3_base}/models/$(basename "$primary_riva_file")" \
         --metadata "artifact-type=riva-model,model-name=${RIVA_ASR_MODEL_NAME},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
-        --storage-class STANDARD; then
+        --storage-class STANDARD --region us-east-2); then
         log "Primary model file uploaded successfully"
     else
         err "Failed to upload primary model file"
@@ -392,16 +546,16 @@ EOF
 
     # Upload checksums and metadata
     log "Uploading checksums and metadata..."
-    aws s3 cp "$checksum_file" "${s3_base}/checksums.sha256" --content-type "text/plain" || { err "Failed to upload checksums"; return 1; }
-    aws s3 cp "$artifact_file" "${s3_base}/artifact.json" --content-type "application/json" || { err "Failed to upload metadata"; return 1; }
-    aws s3 cp "$upload_manifest" "${s3_base}/upload_manifest.json" --content-type "application/json" || { err "Failed to upload manifest"; return 1; }
+    (unset AWS_PROFILE; aws s3 cp "$checksum_file" "${s3_base}/checksums.sha256" --content-type "text/plain" --region us-east-2) || { err "Failed to upload checksums"; return 1; }
+    (unset AWS_PROFILE; aws s3 cp "$artifact_file" "${s3_base}/artifact.json" --content-type "application/json" --region us-east-2) || { err "Failed to upload metadata"; return 1; }
+    (unset AWS_PROFILE; aws s3 cp "$upload_manifest" "${s3_base}/upload_manifest.json" --content-type "application/json" --region us-east-2) || { err "Failed to upload manifest"; return 1; }
 
     # Create completion marker
     local completion_marker="${work_dir}/staging_complete.txt"
     echo "Staging completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$completion_marker"
     echo "Upload ID: ${RUN_ID}" >> "$completion_marker"
     echo "Next step: riva-131-convert-models.sh" >> "$completion_marker"
-    aws s3 cp "$completion_marker" "${s3_base}/staging_complete.txt" --content-type "text/plain"
+    (unset AWS_PROFILE; aws s3 cp "$completion_marker" "${s3_base}/staging_complete.txt" --content-type "text/plain" --region us-east-2)
 
     # Set lifecycle policy for cleanup (if supported)
     if [[ "$ARTIFACT_RETENTION_DAYS" -gt 0 ]]; then
@@ -442,18 +596,18 @@ verify_s3_upload() {
     local total_size_s3=0
 
     for file_path in "${expected_files[@]}"; do
-        if aws s3 ls "${s3_base}/${file_path}" >/dev/null 2>&1; then
+        if (unset AWS_PROFILE; aws s3 ls "${s3_base}/${file_path}" --region us-east-2) >/dev/null 2>&1; then
             # Get file size and last modified for directories
             if [[ "$file_path" =~ /$ ]]; then
                 local dir_size
-                dir_size=$(aws s3 ls "${s3_base}/${file_path}" --recursive --summarize | grep "Total Size" | awk '{print $3}' || echo "0")
+                dir_size=$((unset AWS_PROFILE; aws s3 ls "${s3_base}/${file_path}" --recursive --summarize --region us-east-2) | grep "Total Size" | awk '{print $3}' || echo "0")
                 local file_count
-                file_count=$(aws s3 ls "${s3_base}/${file_path}" --recursive | wc -l)
+                file_count=$((unset AWS_PROFILE; aws s3 ls "${s3_base}/${file_path}" --recursive --region us-east-2) | wc -l)
                 log "✓ $file_path ($file_count files, $(( ${dir_size:-0} / 1024 / 1024 ))MB)"
                 total_size_s3=$((total_size_s3 + ${dir_size:-0}))
             else
                 local file_info
-                file_info=$(aws s3 ls "${s3_base}/${file_path}" | awk '{print $3, $4}')
+                file_info=$((unset AWS_PROFILE; aws s3 ls "${s3_base}/${file_path}" --region us-east-2) | awk '{print $3, $4}')
                 local file_size=$(echo "$file_info" | awk '{print $1}')
                 log "✓ $file_path ($(( ${file_size:-0} / 1024 ))KB)"
                 total_size_s3=$((total_size_s3 + ${file_size:-0}))
@@ -469,7 +623,7 @@ verify_s3_upload() {
         log "Total uploaded size: $(( total_size_s3 / 1024 / 1024 ))MB"
 
         # Verify staging completion marker
-        if aws s3 cp "${s3_base}/staging_complete.txt" - | grep -q "${RUN_ID}"; then
+        if (unset AWS_PROFILE; aws s3 cp "${s3_base}/staging_complete.txt" - --region us-east-2) | grep -q "${RUN_ID}"; then
             log "Staging completion marker verified"
         else
             warn "Staging completion marker may be invalid"
@@ -477,7 +631,7 @@ verify_s3_upload() {
 
         # Test download of a small file to verify accessibility
         log "Testing S3 accessibility..."
-        if aws s3 cp "${s3_base}/checksums.sha256" /tmp/test_download_${RUN_ID}.sha256 >/dev/null 2>&1; then
+        if (unset AWS_PROFILE; aws s3 cp "${s3_base}/checksums.sha256" /tmp/test_download_${RUN_ID}.sha256 --region us-east-2) >/dev/null 2>&1; then
             log "S3 download test successful"
             rm -f "/tmp/test_download_${RUN_ID}.sha256"
         else
@@ -537,15 +691,24 @@ main() {
     load_environment
     require_env_vars "${REQUIRED_VARS[@]}"
 
-    download_source_model
-    extract_and_validate
-    compute_checksums
-    create_artifact_metadata
-    upload_to_s3_staging
-    verify_s3_upload
-    generate_staging_summary
+    if [[ "$REFERENCE_ONLY" == "1" ]]; then
+        log "🔗 Using reference-only mode (no download)"
+        create_reference_staging
+        create_reference_metadata
+        upload_reference_metadata
+        generate_staging_summary
+    else
+        log "📥 Using full download mode"
+        download_source_model
+        extract_and_validate
+        compute_checksums
+        create_artifact_metadata
+        upload_to_s3_staging
+        verify_s3_upload
+        generate_staging_summary
+    fi
 
-    log "✅ Model artifacts prepared successfully in S3"
+    log "✅ Model artifacts prepared successfully"
 }
 
 # Parse command line arguments
@@ -563,12 +726,17 @@ while [[ $# -gt 0 ]]; do
             ARTIFACT_RETENTION_DAYS="${1#*=}"
             shift
             ;;
+        --reference-only)
+            REFERENCE_ONLY=1
+            shift
+            ;;
         --help)
             echo "Usage: $0 [options]"
             echo "Options:"
             echo "  --force               Force re-download even if artifacts exist"
             echo "  --no-checksum         Skip checksum validation"
             echo "  --retention-days=N    Artifact retention period (default: $ARTIFACT_RETENTION_DAYS)"
+            echo "  --reference-only      Create metadata referencing existing S3 model (fast)"
             echo "  --help                Show this help message"
             exit 0
             ;;
