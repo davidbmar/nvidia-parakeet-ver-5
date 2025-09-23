@@ -176,17 +176,42 @@ if [ $INSTALL_RESULT -eq 0 ]; then
     echo ""
     echo -e "${GREEN}✅ Installation complete!${NC}"
     echo "Driver version $DRIVER_VERSION has been installed."
-    
+
+    # Auto-fix any library symlink issues
+    echo ""
+    echo -e "${BLUE}🔧 Checking and fixing library symlinks...${NC}"
+    KERNEL_VERSION=$(modinfo nvidia 2>/dev/null | grep "^version:" | awk '{print $2}' || echo "$DRIVER_VERSION")
+    MATCHING_LIB=$(find /usr/lib /usr/lib64 -name "libnvidia-ml.so.$KERNEL_VERSION" 2>/dev/null | head -1)
+
+    if [[ -n "$MATCHING_LIB" ]]; then
+        LIB_DIR=$(dirname "$MATCHING_LIB")
+        ln -sf "$MATCHING_LIB" "$LIB_DIR/libnvidia-ml.so.1"
+        ln -sf "$LIB_DIR/libnvidia-ml.so.1" "$LIB_DIR/libnvidia-ml.so"
+        ldconfig
+        echo -e "${GREEN}✅ Library symlinks updated${NC}"
+    fi
+
+    # Test nvidia-smi
+    echo ""
+    echo -e "${BLUE}🧪 Testing nvidia-smi...${NC}"
+    if nvidia-smi >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ nvidia-smi working correctly${NC}"
+        nvidia-smi --query-gpu=name,driver_version --format=csv
+    else
+        echo -e "${YELLOW}⚠️  nvidia-smi test failed - may need reboot${NC}"
+        echo "Run riva-042-fix-nvidia-driver-mismatch.sh after reboot if needed"
+    fi
+
 else
     echo -e "${RED}❌ Driver installation failed${NC}"
     echo "Check the log file for details: $LOG_FILE"
     log "Driver installation failed with code $INSTALL_RESULT"
     echo "failed" > "$STATUS_FILE"
-    
+
     # Show last lines of installer log
     echo ""
     echo "Last lines from installer log:"
     tail -20 /var/log/nvidia-installer.log 2>/dev/null || true
-    
+
     exit 1
 fi
