@@ -27,7 +27,7 @@ REQUIRED_VARS=(
 : "${CHECKSUM_VALIDATION:=1}"
 : "${ARTIFACT_RETENTION_DAYS:=90}"
 : "${REFERENCE_ONLY:=0}"
-: "${BINTARBALL_REFERENCE:=0}"
+: "${BINTARBALL_REFERENCE:=1}"
 
 # Function to create bintarball reference staging (uses existing organized files)
 create_bintarball_reference_staging() {
@@ -884,7 +884,7 @@ show_startup_summary() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📋 Purpose: Prepare Parakeet RNNT model for RIVA deployment"
     echo "📊 Model: 3.7GB Parakeet RNNT English ASR model"
-    echo "🔧 Modes: --bintarball-reference (2s) | --reference-only (4s) | full download (~5min)"
+    echo "🔧 Default: bintarball-reference (2s) | --reference-only (4s) | --full-download (~5min)"
     echo "📖 Docs: Run with --docs flag for complete documentation"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo
@@ -946,6 +946,11 @@ while [[ $# -gt 0 ]]; do
             BINTARBALL_REFERENCE=1
             shift
             ;;
+        --full-download)
+            BINTARBALL_REFERENCE=0
+            REFERENCE_ONLY=0
+            shift
+            ;;
         --docs)
             show_documentation
             exit 0
@@ -957,7 +962,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-checksum         Skip checksum validation"
             echo "  --retention-days=N    Artifact retention period (default: $ARTIFACT_RETENTION_DAYS)"
             echo "  --reference-only      Create metadata referencing existing S3 model (fast)"
-            echo "  --bintarball-reference Use existing bintarball structure (optimized, no duplication)"
+            echo "  --bintarball-reference Use existing bintarball structure (DEFAULT - optimized)"
+            echo "  --full-download       Force full download mode (legacy, creates duplicates)"
             echo "  --docs                Show complete documentation"
             echo "  --help                Show this help message"
             exit 0
@@ -983,7 +989,8 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-checksum         Skip checksum validation"
             echo "  --retention-days=N    Artifact retention period (default: 90)"
             echo "  --reference-only      Create metadata referencing existing S3 model (fast)"
-            echo "  --bintarball-reference Use existing bintarball structure (optimized, no duplication)"
+            echo "  --bintarball-reference Use existing bintarball structure (DEFAULT - optimized)"
+            echo "  --full-download       Force full download mode (legacy, creates duplicates)"
             echo "  --docs                Show complete documentation"
             echo "  --help                Show this help message"
             exit 0
