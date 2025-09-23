@@ -400,7 +400,7 @@ EOF
     local completion_marker="${work_dir}/staging_complete.txt"
     echo "Staging completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$completion_marker"
     echo "Upload ID: ${RUN_ID}" >> "$completion_marker"
-    echo "Next step: riva-087-convert-models.sh" >> "$completion_marker"
+    echo "Next step: riva-131-convert-models.sh" >> "$completion_marker"
     aws s3 cp "$completion_marker" "${s3_base}/staging_complete.txt" --content-type "text/plain"
 
     # Set lifecycle policy for cleanup (if supported)
@@ -525,7 +525,7 @@ generate_staging_summary() {
     echo
     echo "✅ Model artifacts ready for conversion"
 
-    NEXT_SUCCESS="riva-087-convert-models.sh"
+    NEXT_SUCCESS="riva-131-convert-models.sh"
 
     end_step
 }

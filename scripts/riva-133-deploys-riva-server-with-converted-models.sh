@@ -86,7 +86,7 @@ download_triton_repository() {
     if [[ -f "${RIVA_STATE_DIR}/triton_repository_s3" ]]; then
         triton_repo_s3=$(cat "${RIVA_STATE_DIR}/triton_repository_s3")
     else
-        err "No Triton repository S3 location found. Run riva-087-convert-models.sh first."
+        err "No Triton repository S3 location found. Run riva-131-convert-models.sh first."
         return 1
     fi
 
@@ -403,7 +403,7 @@ EOF
         echo "   • Metrics: http://${GPU_INSTANCE_IP}:${METRICS_PORT}"
     fi
 
-    NEXT_SUCCESS="riva-089-validate-deployment.sh"
+    NEXT_SUCCESS="riva-134-validate-deployment.sh"
 
     end_step
 }
@@ -417,7 +417,7 @@ main() {
 
     # Verify we have converted models
     if [[ ! -f "${RIVA_STATE_DIR}/triton_repository_s3" ]]; then
-        err "No converted models found. Run riva-087-convert-models.sh first."
+        err "No converted models found. Run riva-131-convert-models.sh first."
         return 1
     fi
 
