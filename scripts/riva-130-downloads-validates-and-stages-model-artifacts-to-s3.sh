@@ -684,8 +684,38 @@ generate_staging_summary() {
     end_step
 }
 
+# Function to display documentation
+show_documentation() {
+    local doc_file="$(dirname "${BASH_SOURCE[0]}")/riva-130-downloads-validates-and-stages-model-artifacts-to-s3.md"
+
+    if [[ -f "$doc_file" ]]; then
+        echo
+        echo "📚 RIVA-130 Documentation:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        cat "$doc_file"
+        echo
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+        echo "Documentation file not found: $doc_file"
+    fi
+}
+
+# Function to show brief startup summary
+show_startup_summary() {
+    echo
+    echo "🎯 RIVA-130: Model Artifact Preparation & S3 Staging"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📋 Purpose: Prepare Parakeet RNNT model for RIVA deployment"
+    echo "📊 Model: 3.7GB Parakeet RNNT English ASR model"
+    echo "🔧 Modes: --reference-only (4s) | full download (~5min)"
+    echo "📖 Docs: Run with --docs flag for complete documentation"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo
+}
+
 # Main execution
 main() {
+    show_startup_summary
     log "📦 Preparing model artifacts for RIVA deployment"
 
     load_environment
@@ -730,6 +760,10 @@ while [[ $# -gt 0 ]]; do
             REFERENCE_ONLY=1
             shift
             ;;
+        --docs)
+            show_documentation
+            exit 0
+            ;;
         --help)
             echo "Usage: $0 [options]"
             echo "Options:"
@@ -737,12 +771,38 @@ while [[ $# -gt 0 ]]; do
             echo "  --no-checksum         Skip checksum validation"
             echo "  --retention-days=N    Artifact retention period (default: $ARTIFACT_RETENTION_DAYS)"
             echo "  --reference-only      Create metadata referencing existing S3 model (fast)"
+            echo "  --docs                Show complete documentation"
             echo "  --help                Show this help message"
             exit 0
             ;;
         *)
             err "Unknown option: $1"
             exit 1
+            ;;
+    esac
+done
+
+# Parse command line arguments first (before script initialization)
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --docs)
+            show_documentation
+            exit 0
+            ;;
+        --help)
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  --force               Force re-download even if artifacts exist"
+            echo "  --no-checksum         Skip checksum validation"
+            echo "  --retention-days=N    Artifact retention period (default: 90)"
+            echo "  --reference-only      Create metadata referencing existing S3 model (fast)"
+            echo "  --docs                Show complete documentation"
+            echo "  --help                Show this help message"
+            exit 0
+            ;;
+        *)
+            # Put back the argument for main script processing
+            break
             ;;
     esac
 done
