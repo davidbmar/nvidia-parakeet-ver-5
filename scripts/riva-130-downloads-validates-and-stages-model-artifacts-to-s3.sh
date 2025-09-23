@@ -14,8 +14,8 @@ init_script "086" "Prepare Model Artifacts" "Stage and validate model artifacts 
 # Required environment variables
 REQUIRED_VARS=(
     "AWS_REGION"
-    "RIVA_MODELS_S3_BUCKET"
-    "RIVA_ASR_MODEL_SOURCE_URI"
+    "NVIDIA_DRIVERS_S3_BUCKET"
+    "RIVA_ASR_MODEL_S3_URI"
     "RIVA_ASR_MODEL_NAME"
     "RIVA_ASR_LANG_CODE"
     "MODEL_VERSION"
@@ -37,13 +37,13 @@ download_source_model() {
     log "Creating work directory: $work_dir"
     mkdir -p "$work_dir"
 
-    log "Downloading source model from: ${RIVA_ASR_MODEL_SOURCE_URI}"
+    log "Downloading source model from: ${RIVA_ASR_MODEL_S3_URI}"
     debug "Target: $source_file"
 
     # Get expected file size for progress tracking
     local expected_size_bytes
-    if expected_size_bytes=$(aws s3api head-object --bucket "$(echo "${RIVA_ASR_MODEL_SOURCE_URI}" | cut -d'/' -f3)" \
-        --key "$(echo "${RIVA_ASR_MODEL_SOURCE_URI}" | cut -d'/' -f4-)" \
+    if expected_size_bytes=$(aws s3api head-object --bucket "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f3)" \
+        --key "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f4-)" \
         --query 'ContentLength' --output text 2>/dev/null); then
         local expected_size_mb=$((expected_size_bytes / 1024 / 1024))
         log "Expected download size: ${expected_size_mb}MB"
@@ -81,7 +81,7 @@ download_source_model() {
         log "Download attempt $((retry_count + 1))/$max_retries..."
 
         # Use AWS CLI with progress if available
-        if aws s3 cp "${RIVA_ASR_MODEL_SOURCE_URI}" "$source_file" \
+        if aws s3 cp "${RIVA_ASR_MODEL_S3_URI}" "$source_file" \
             --cli-read-timeout 300 --cli-connect-timeout 60; then
             log "Source model downloaded successfully"
             break
@@ -241,7 +241,7 @@ create_artifact_metadata() {
 
     # Get download metadata if available
     local download_duration="unknown"
-    local download_source="${RIVA_ASR_MODEL_SOURCE_URI}"
+    local download_source="${RIVA_ASR_MODEL_S3_URI}"
 
     # Create comprehensive artifact metadata
     cat > "$artifact_file" << EOF
@@ -274,7 +274,7 @@ create_artifact_metadata() {
   },
   "deployment": {
     "environment": "${ENV}",
-    "s3_bucket": "${RIVA_MODELS_S3_BUCKET}",
+    "s3_bucket": "${NVIDIA_DRIVERS_S3_BUCKET}",
     "s3_prefix": "${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}",
     "retention_days": ${ARTIFACT_RETENTION_DAYS},
     "staging_complete": true
@@ -325,7 +325,7 @@ upload_to_s3_staging() {
     artifact_file=$(cat "${RIVA_STATE_DIR}/artifact_metadata")
 
     local s3_prefix="${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}"
-    local s3_base="s3://${RIVA_MODELS_S3_BUCKET}/${s3_prefix}"
+    local s3_base="s3://${NVIDIA_DRIVERS_S3_BUCKET}/${s3_prefix}"
     local upload_timestamp
     upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
