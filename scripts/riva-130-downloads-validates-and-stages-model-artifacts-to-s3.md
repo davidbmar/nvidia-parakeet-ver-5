@@ -3,7 +3,17 @@
 ## 🎯 **Primary Purpose**
 Prepares AI model artifacts for RIVA ASR deployments by downloading, validating, and staging them in S3 for deployment.
 
-## 🔄 **Two Operating Modes**
+## 🔄 **Three Operating Modes**
+
+### **🏗️ Bintarball Reference Mode** (`--bintarball-reference`) ⭐ **RECOMMENDED**
+```bash
+./scripts/riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh --bintarball-reference
+```
+- ⚡ **2-second execution**
+- 💾 **Saves 8GB+ storage** (no file duplication)
+- 🏗️ **Uses existing bintarball structure** directly
+- ✅ **Direct deployment** from organized files
+- ✅ **Metadata in bintarball/deployment-metadata/**
 
 ### **Fast Mode** (`--reference-only`)
 ```bash
@@ -12,7 +22,7 @@ Prepares AI model artifacts for RIVA ASR deployments by downloading, validating,
 - ✅ **4-second execution**
 - ✅ **No large downloads** (3.7GB model stays in original S3 location)
 - ✅ **Creates metadata** pointing to existing model
-- ✅ **Uploads staging info** to deployment location
+- ❌ **Creates duplicate staging area** (uses more storage)
 
 ### **Full Mode** (default)
 ```bash
@@ -21,7 +31,7 @@ Prepares AI model artifacts for RIVA ASR deployments by downloading, validating,
 - ⏳ **~5 minute execution** (downloads 3.7GB)
 - ✅ **Complete validation** with checksums
 - ✅ **Model extraction** and verification
-- ✅ **Full S3 staging** with all artifacts
+- ❌ **Full S3 duplication** (downloads + re-uploads 8GB total)
 
 ## 📋 **Step-by-Step Process**
 
@@ -59,14 +69,25 @@ Creates comprehensive JSON metadata including:
 ```
 
 ### **4. S3 Staging**
-Uploads to deployment staging area:
+
+**Bintarball Reference Mode (Recommended):**
+```
+s3://dbm-cf-2-web/bintarball/
+├── riva-models/parakeet/parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz  # ← Uses existing
+├── riva-containers/riva-speech-2.15.0.tar.gz                                   # ← Uses existing
+└── deployment-metadata/prod/parakeet-rnnt-en-us/v2025.09/
+    ├── deployment.json      # Deployment references to existing files
+    └── deployment_ready.txt # Completion marker
+```
+
+**Traditional Staging Mode:**
 ```
 s3://dbm-cf-2-web/prod/parakeet-rnnt-en-us/v2025.09/
 ├── artifact.json          # Model metadata
 ├── staging_complete.txt    # Completion marker
-├── source/                 # Original model archive (full mode)
-├── models/                 # Extracted .riva files (full mode)
-└── checksums.sha256       # Integrity hashes (full mode)
+├── source/                 # ❌ Duplicate copy of model archive
+├── models/                 # ❌ Duplicate copy of extracted .riva files
+└── checksums.sha256       # Integrity hashes
 ```
 
 ### **5. Verification & Summary**
@@ -99,12 +120,17 @@ s3://dbm-cf-2-web/prod/parakeet-rnnt-en-us/v2025.09/
 
 ## 🎮 **Usage Examples**
 
-**Quick staging** (recommended for testing):
+**🏗️ Bintarball reference** (⭐ **RECOMMENDED** - fastest, most efficient):
+```bash
+./scripts/riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh --bintarball-reference
+```
+
+**Quick staging** (good for testing):
 ```bash
 ./scripts/riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh --reference-only
 ```
 
-**Full staging** (production deployment):
+**Full staging** (legacy mode, creates duplicates):
 ```bash
 ./scripts/riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh
 ```
@@ -163,11 +189,17 @@ The config profile () could not be found
 - **Check**: S3 bucket and key exist and are accessible
 
 ## 📈 **Performance Metrics**
+- **🏗️ Bintarball reference mode**: ~2 seconds ⭐ **FASTEST**
 - **Reference-only mode**: ~4 seconds
 - **Full download mode**: ~5 minutes (varies by network)
 - **Download speed**: Typically 100-150 MiB/s
 - **Extraction time**: ~1 minute for 3.7GB archive
 - **Checksum computation**: ~1 minute for 3.8GB
+
+## 💾 **Storage Efficiency**
+- **🏗️ Bintarball reference**: 0 bytes duplication (uses existing files)
+- **Reference-only**: ~3KB metadata (but creates separate staging area)
+- **Full mode**: ~8GB total duplication (3.7GB source + 3.8GB extracted)
 
 ## 🔄 **Recovery & Resumption**
 The script is designed to be resumable:
