@@ -44,8 +44,8 @@ if [ -z "$NVIDIA_DRIVER_REQUIRED_VERSION" ]; then
 fi
 
 if [ -z "$NVIDIA_DRIVER_TARGET_VERSION" ]; then
-    echo "NVIDIA_DRIVER_TARGET_VERSION=550" >> "$ENV_FILE"
-    NVIDIA_DRIVER_TARGET_VERSION="550"
+    echo "NVIDIA_DRIVER_TARGET_VERSION=550.90.12" >> "$ENV_FILE"
+    NVIDIA_DRIVER_TARGET_VERSION="550.90.12"
 fi
 
 # Function to run command on target server
@@ -222,6 +222,17 @@ sudo systemctl stop lightdm 2>/dev/null || true
 sudo systemctl stop gdm 2>/dev/null || true
 sudo systemctl stop xdm 2>/dev/null || true
 
+# Wait for unattended-upgrades to complete
+echo "Waiting for package manager to be available..."
+while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+    echo "Package manager is locked by another process, waiting 10s..."
+    sleep 10
+done
+while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+    echo "APT lists locked by another process, waiting 10s..."
+    sleep 10
+done
+
 # Remove old drivers
 echo "Removing old NVIDIA drivers..."
 sudo apt-get remove --purge -y 'nvidia-*' 'libnvidia-*' '*nvidia*' 2>/dev/null || true
@@ -336,6 +347,17 @@ if [ "$USE_S3_DRIVERS" = "true" ]; then
             sudo rmmod nvidia 2>/dev/null || true
         fi
         
+        # Wait for unattended-upgrades to complete
+        echo 'Waiting for package manager to be available...'
+        while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo 'Package manager is locked by another process, waiting 10s...'
+            sleep 10
+        done
+        while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+            echo 'APT lists locked by another process, waiting 10s...'
+            sleep 10
+        done
+
         # Remove old drivers
         echo 'Removing old NVIDIA drivers...'
         sudo apt-get remove --purge -y 'nvidia-*' 'libnvidia-*' '*nvidia*' 2>/dev/null || true
@@ -380,6 +402,17 @@ else
         sudo dpkg --configure -a || true
         sudo apt-get install -f -y || true
         
+        # Wait for unattended-upgrades to complete
+        echo 'Waiting for package manager to be available...'
+        while sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+            echo 'Package manager is locked by another process, waiting 10s...'
+            sleep 10
+        done
+        while sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+            echo 'APT lists locked by another process, waiting 10s...'
+            sleep 10
+        done
+
         # Remove old NVIDIA packages completely
         echo 'Removing old NVIDIA packages...'
         sudo apt-get remove --purge -y 'nvidia-*' 'libnvidia-*' '*nvidia*' || true

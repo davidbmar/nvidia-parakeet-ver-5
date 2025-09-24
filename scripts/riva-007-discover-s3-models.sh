@@ -285,7 +285,7 @@ if aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" >/dev/null 2>&1; then
             model_file_path="${BASH_REMATCH[3]}"
             model_file=$(basename "$model_file_path")
 
-            RIVA_MODELS["$model_file"]="s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/$model_file_path"
+            RIVA_MODELS["$model_file"]="s3://${S3_BUCKET}/$model_file_path"
             RIVA_MODEL_SIZES["$model_file"]="$model_size"
         fi
     done < <(aws s3 ls "s3://${S3_BUCKET}/${S3_RIVA_MODELS_PREFIX}/" --recursive --human-readable)
