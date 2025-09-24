@@ -118,9 +118,34 @@ start_instance() {
 
     case "$current_state" in
         "none")
-            json_log "$SCRIPT_NAME" "state_check" "error" "Instance not found"
-            print_status "error" "Instance $INSTANCE_ID not found in AWS"
-            exit 1
+            json_log "$SCRIPT_NAME" "state_check" "warn" "Instance not found, looking for alternatives"
+            print_status "warn" "Instance $INSTANCE_ID not found, searching for stopped instances..."
+
+            # Try to find a stopped GPU instance
+            local stopped_instance=$(aws ec2 describe-instances \
+                --filters "Name=instance-type,Values=g4dn.*" \
+                          "Name=instance-state-name,Values=stopped" \
+                --region "$AWS_REGION" \
+                --query 'Reservations[0].Instances[0].InstanceId' \
+                --output text 2>/dev/null || echo "")
+
+            if [ -n "$stopped_instance" ] && [ "$stopped_instance" != "None" ]; then
+                echo -e "${GREEN}✓ Found stopped instance: $stopped_instance${NC}"
+                INSTANCE_ID="$stopped_instance"
+
+                # Update .env with the new instance ID
+                update_env_file "GPU_INSTANCE_ID" "$INSTANCE_ID"
+                json_log "$SCRIPT_NAME" "state_check" "ok" "Switched to available instance" \
+                    "new_instance_id=$INSTANCE_ID"
+
+                # Re-check the state of the new instance
+                current_state=$(get_instance_state "$INSTANCE_ID")
+            else
+                json_log "$SCRIPT_NAME" "state_check" "error" "No available instances found"
+                print_status "error" "No stopped GPU instances available"
+                echo "Run: ./scripts/riva-015-deploy-gpu-instance.sh to create a new instance"
+                exit 1
+            fi
             ;;
         "running")
             json_log "$SCRIPT_NAME" "state_check" "warn" "Instance already running"
