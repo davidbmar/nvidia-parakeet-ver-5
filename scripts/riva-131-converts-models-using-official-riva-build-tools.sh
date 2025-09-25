@@ -14,14 +14,13 @@ init_script "087" "Convert Models" "Convert .riva models to Triton format using 
 # Required environment variables
 REQUIRED_VARS=(
     "AWS_REGION"
-    "RIVA_MODELS_S3_BUCKET"
-    "RIVA_ASR_MODEL_NAME"
-    "RIVA_ASR_LANG_CODE"
-    "MODEL_VERSION"
-    "ENV"
+    "NVIDIA_DRIVERS_S3_BUCKET"
+    "RIVA_MODEL"
+    "RIVA_LANGUAGE_CODE"
+    "ENV_VERSION"
     "GPU_INSTANCE_IP"
     "SSH_KEY_NAME"
-    "RIVA_SERVICEMAKER_VERSION"
+    "RIVA_SERVER_SELECTED"
     "NGC_API_KEY"
 )
 
@@ -31,6 +30,7 @@ REQUIRED_VARS=(
 : "${RIVA_BUILD_OPTS:=--decoding=greedy}"
 : "${OUTPUT_FORMAT:=riva}"  # riva or triton
 : "${ENABLE_GPU:=1}"
+
 
 # Function to setup remote build environment
 setup_remote_environment() {
@@ -608,6 +608,15 @@ main() {
     log "🔄 Converting RIVA models using official servicemaker tools"
 
     load_environment
+
+    # Derive variables from existing .env variables for compatibility
+    RIVA_MODELS_S3_BUCKET="$NVIDIA_DRIVERS_S3_BUCKET"
+    RIVA_ASR_MODEL_NAME="$RIVA_MODEL"
+    RIVA_ASR_LANG_CODE="$RIVA_LANGUAGE_CODE"
+    MODEL_VERSION=$(echo "$RIVA_MODEL" | sed 's/.*_v\([0-9.]*\)\.tar\.gz/v\1/')
+    ENV="$ENV_VERSION"
+    RIVA_SERVICEMAKER_VERSION=$(echo "$RIVA_SERVER_SELECTED" | sed 's/riva-speech-\([0-9.]*\)\.tar\.gz/\1/')
+
     require_env_vars "${REQUIRED_VARS[@]}"
 
     # Verify we have staged artifacts
