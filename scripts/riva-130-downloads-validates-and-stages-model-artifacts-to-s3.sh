@@ -15,11 +15,10 @@ init_script "086" "Prepare Model Artifacts" "Stage and validate model artifacts 
 REQUIRED_VARS=(
     "AWS_REGION"
     "NVIDIA_DRIVERS_S3_BUCKET"
-    "RIVA_ASR_MODEL_S3_URI"
-    "RIVA_ASR_MODEL_NAME"
-    "RIVA_ASR_LANG_CODE"
-    "MODEL_VERSION"
-    "ENV"
+    "RIVA_MODEL_PATH"
+    "RIVA_MODEL_SELECTED"
+    "RIVA_LANGUAGE_CODE"
+    "DEPLOYMENT_APPROACH"
 )
 
 # Optional variables with defaults
@@ -66,6 +65,10 @@ create_bintarball_reference_staging() {
     echo "$bintarball_container_uri" > "${RIVA_STATE_DIR}/container_s3_uri"
     echo "$model_size_bytes" > "${RIVA_STATE_DIR}/source_model_size"
 
+    # Extract MODEL_VERSION from RIVA_MODEL_SELECTED filename
+    # parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz -> v8.1
+    MODEL_VERSION=$(echo "${RIVA_MODEL_SELECTED}" | sed 's/.*_v\([0-9.]*\)\.tar\.gz/v\1/')
+
     # Create lightweight deployment manifest
     local manifest_file="${work_dir}/bintarball_deployment.json"
     local timestamp
@@ -74,12 +77,12 @@ create_bintarball_reference_staging() {
     cat > "$manifest_file" << EOF
 {
   "deployment_type": "bintarball_reference",
-  "artifact_id": "${RIVA_ASR_MODEL_NAME}-${MODEL_VERSION}",
+  "artifact_id": "${RIVA_MODEL_SELECTED}-${MODEL_VERSION}",
   "created_at": "${timestamp}",
   "model": {
-    "name": "${RIVA_ASR_MODEL_NAME}",
+    "name": "${RIVA_MODEL_SELECTED}",
     "version": "${MODEL_VERSION}",
-    "language_code": "${RIVA_ASR_LANG_CODE}",
+    "language_code": "${RIVA_LANGUAGE_CODE}",
     "type": "speech_recognition",
     "architecture": "rnnt"
   },
@@ -96,7 +99,7 @@ create_bintarball_reference_staging() {
     }
   },
   "deployment": {
-    "environment": "${ENV}",
+    "environment": "${ENV_VERSION}",
     "s3_bucket": "${NVIDIA_DRIVERS_S3_BUCKET}",
     "staging_method": "bintarball_reference",
     "no_duplication": true,
@@ -116,9 +119,9 @@ EOF
 
     log "Bintarball reference staging created (no downloads required)"
     log "Model Details:"
-    log "  • Name: ${RIVA_ASR_MODEL_NAME}"
+    log "  • Name: ${RIVA_MODEL_SELECTED}"
     log "  • Version: ${MODEL_VERSION}"
-    log "  • Language: ${RIVA_ASR_LANG_CODE}"
+    log "  • Language: ${RIVA_LANGUAGE_CODE}"
     log "  • Source: Existing bintarball structure"
     log "  • Size: ${model_size_mb}MB"
     log "  • Status: Verified and ready ✓"
@@ -136,11 +139,11 @@ create_reference_staging() {
     mkdir -p "$work_dir"
 
     # Get model metadata from S3 without downloading
-    log "Getting model metadata from S3: ${RIVA_ASR_MODEL_S3_URI}"
+    log "Getting model metadata from S3: ${RIVA_MODEL_PATH}"
 
     local expected_size_bytes
-    local bucket_name=$(echo "${RIVA_ASR_MODEL_S3_URI}" | sed 's|s3://||' | cut -d'/' -f1)
-    local object_key=$(echo "${RIVA_ASR_MODEL_S3_URI}" | sed 's|s3://[^/]*/||')
+    local bucket_name=$(echo "${RIVA_MODEL_PATH}" | sed 's|s3://||' | cut -d'/' -f1)
+    local object_key=$(echo "${RIVA_MODEL_PATH}" | sed 's|s3://[^/]*/||')
     debug "S3 bucket: $bucket_name"
     debug "S3 key: $object_key"
 
@@ -150,13 +153,13 @@ create_reference_staging() {
         local expected_size_mb=$((expected_size_bytes / 1024 / 1024))
         log "Model size: ${expected_size_mb}MB (${expected_size_bytes} bytes)"
     else
-        err "Cannot access model in S3: ${RIVA_ASR_MODEL_S3_URI}"
+        err "Cannot access model in S3: ${RIVA_MODEL_PATH}"
         return 1
     fi
 
     # Store metadata without downloading
     echo "$work_dir" > "${RIVA_STATE_DIR}/model_work_dir"
-    echo "${RIVA_ASR_MODEL_S3_URI}" > "${RIVA_STATE_DIR}/source_model_s3_uri"
+    echo "${RIVA_MODEL_PATH}" > "${RIVA_STATE_DIR}/source_model_s3_uri"
     echo "$expected_size_bytes" > "${RIVA_STATE_DIR}/source_model_size"
 
     log "Reference staging created for existing S3 model"
@@ -173,13 +176,13 @@ download_source_model() {
     log "Creating work directory: $work_dir"
     mkdir -p "$work_dir"
 
-    log "Downloading source model from: ${RIVA_ASR_MODEL_S3_URI}"
+    log "Downloading source model from: ${RIVA_MODEL_PATH}"
     debug "Target: $source_file"
 
     # Get expected file size for progress tracking
     local expected_size_bytes
-    if expected_size_bytes=$(unset AWS_PROFILE; aws s3api head-object --bucket "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f3)" \
-        --key "$(echo "${RIVA_ASR_MODEL_S3_URI}" | cut -d'/' -f4-)" \
+    if expected_size_bytes=$(unset AWS_PROFILE; aws s3api head-object --bucket "$(echo "${RIVA_MODEL_PATH}" | cut -d'/' -f3)" \
+        --key "$(echo "${RIVA_MODEL_PATH}" | cut -d'/' -f4-)" \
         --region us-east-2 --query 'ContentLength' --output text 2>/dev/null); then
         local expected_size_mb=$((expected_size_bytes / 1024 / 1024))
         log "Expected download size: ${expected_size_mb}MB"
@@ -217,7 +220,7 @@ download_source_model() {
         log "Download attempt $((retry_count + 1))/$max_retries..."
 
         # Use AWS CLI with explicit region and no profile
-        if (unset AWS_PROFILE; aws s3 cp "${RIVA_ASR_MODEL_S3_URI}" "$source_file" \
+        if (unset AWS_PROFILE; aws s3 cp "${RIVA_MODEL_PATH}" "$source_file" \
             --region us-east-2 --cli-read-timeout 300 --cli-connect-timeout 60); then
             log "Source model downloaded successfully"
             break
@@ -364,16 +367,16 @@ create_reference_metadata() {
     # Create metadata referencing existing S3 model
     cat > "$artifact_file" << EOF
 {
-  "artifact_id": "${RIVA_ASR_MODEL_NAME}-${MODEL_VERSION}",
+  "artifact_id": "${RIVA_MODEL_SELECTED}-${MODEL_VERSION}",
   "created_at": "${timestamp}",
   "staging_mode": "reference_only",
   "model": {
-    "name": "${RIVA_ASR_MODEL_NAME}",
+    "name": "${RIVA_MODEL_SELECTED}",
     "version": "${MODEL_VERSION}",
-    "language_code": "${RIVA_ASR_LANG_CODE}",
+    "language_code": "${RIVA_LANGUAGE_CODE}",
     "type": "speech_recognition",
     "architecture": "rnnt",
-    "description": "Parakeet RNNT model for ${RIVA_ASR_LANG_CODE} speech recognition"
+    "description": "Parakeet RNNT model for ${RIVA_LANGUAGE_CODE} speech recognition"
   },
   "source": {
     "uri": "${source_s3_uri}",
@@ -384,9 +387,9 @@ create_reference_metadata() {
     "status": "verified"
   },
   "deployment": {
-    "environment": "${ENV}",
+    "environment": "${ENV_VERSION}",
     "s3_bucket": "${NVIDIA_DRIVERS_S3_BUCKET}",
-    "s3_prefix": "${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}",
+    "s3_prefix": "${ENV_VERSION}/${RIVA_MODEL_SELECTED}/${MODEL_VERSION}",
     "retention_days": ${ARTIFACT_RETENTION_DAYS},
     "staging_complete": true,
     "reference_mode": true
@@ -411,9 +414,9 @@ EOF
 
     # Display key information
     log "Model Details:"
-    log "  • Name: ${RIVA_ASR_MODEL_NAME}"
+    log "  • Name: ${RIVA_MODEL_SELECTED}"
     log "  • Version: ${MODEL_VERSION}"
-    log "  • Language: ${RIVA_ASR_LANG_CODE}"
+    log "  • Language: ${RIVA_LANGUAGE_CODE}"
     log "  • Source: Existing S3 model"
     log "  • Size: $((source_size_bytes / 1024 / 1024))MB"
     log "  • Status: Reference verified ✓"
@@ -452,20 +455,20 @@ create_artifact_metadata() {
 
     # Get download metadata if available
     local download_duration="unknown"
-    local download_source="${RIVA_ASR_MODEL_S3_URI}"
+    local download_source="${RIVA_MODEL_PATH}"
 
     # Create comprehensive artifact metadata
     cat > "$artifact_file" << EOF
 {
-  "artifact_id": "${RIVA_ASR_MODEL_NAME}-${MODEL_VERSION}",
+  "artifact_id": "${RIVA_MODEL_SELECTED}-${MODEL_VERSION}",
   "created_at": "${timestamp}",
   "model": {
-    "name": "${RIVA_ASR_MODEL_NAME}",
+    "name": "${RIVA_MODEL_SELECTED}",
     "version": "${MODEL_VERSION}",
-    "language_code": "${RIVA_ASR_LANG_CODE}",
+    "language_code": "${RIVA_LANGUAGE_CODE}",
     "type": "speech_recognition",
     "architecture": "rnnt",
-    "description": "Parakeet RNNT model for ${RIVA_ASR_LANG_CODE} speech recognition"
+    "description": "Parakeet RNNT model for ${RIVA_LANGUAGE_CODE} speech recognition"
   },
   "source": {
     "uri": "${download_source}",
@@ -484,9 +487,9 @@ create_artifact_metadata() {
     "format": ".riva"
   },
   "deployment": {
-    "environment": "${ENV}",
+    "environment": "${ENV_VERSION}",
     "s3_bucket": "${NVIDIA_DRIVERS_S3_BUCKET}",
-    "s3_prefix": "${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}",
+    "s3_prefix": "${ENV_VERSION}/${RIVA_MODEL_SELECTED}/${MODEL_VERSION}",
     "retention_days": ${ARTIFACT_RETENTION_DAYS},
     "staging_complete": true
   },
@@ -510,9 +513,9 @@ EOF
 
     # Display key information
     log "Model Details:"
-    log "  • Name: ${RIVA_ASR_MODEL_NAME}"
+    log "  • Name: ${RIVA_MODEL_SELECTED}"
     log "  • Version: ${MODEL_VERSION}"
-    log "  • Language: ${RIVA_ASR_LANG_CODE}"
+    log "  • Language: ${RIVA_LANGUAGE_CODE}"
     log "  • Source size: $((source_size_bytes / 1024 / 1024))MB"
     log "  • Model size: $((riva_size_bytes / 1024 / 1024))MB"
     log "  • SHA256 verified: ✓"
@@ -529,7 +532,7 @@ upload_reference_metadata() {
     work_dir=$(cat "${RIVA_STATE_DIR}/model_work_dir")
     artifact_file=$(cat "${RIVA_STATE_DIR}/artifact_metadata")
 
-    local s3_prefix="${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}"
+    local s3_prefix="${ENV_VERSION}/${RIVA_MODEL_SELECTED}/${MODEL_VERSION}"
     local s3_base="s3://${NVIDIA_DRIVERS_S3_BUCKET}/${s3_prefix}"
     local upload_timestamp
     upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -548,7 +551,7 @@ upload_reference_metadata() {
     local completion_marker="${work_dir}/staging_complete.txt"
     echo "Reference staging completed at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$completion_marker"
     echo "Mode: reference_only" >> "$completion_marker"
-    echo "Source: ${RIVA_ASR_MODEL_S3_URI}" >> "$completion_marker"
+    echo "Source: ${RIVA_MODEL_PATH}" >> "$completion_marker"
     echo "Run ID: ${RUN_ID}" >> "$completion_marker"
     echo "Next step: Use existing model directly" >> "$completion_marker"
     (unset AWS_PROFILE; aws s3 cp "$completion_marker" "${s3_base}/staging_complete.txt" --content-type "text/plain" --region us-east-2)
@@ -577,7 +580,7 @@ upload_to_s3_staging() {
     checksum_file=$(cat "${RIVA_STATE_DIR}/checksum_file")
     artifact_file=$(cat "${RIVA_STATE_DIR}/artifact_metadata")
 
-    local s3_prefix="${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}"
+    local s3_prefix="${ENV_VERSION}/${RIVA_MODEL_SELECTED}/${MODEL_VERSION}"
     local s3_base="s3://${NVIDIA_DRIVERS_S3_BUCKET}/${s3_prefix}"
     local upload_timestamp
     upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -624,7 +627,7 @@ EOF
     # Upload source archive with progress
     log "Uploading source archive ($(du -h "$source_file" | cut -f1))..."
     if (unset AWS_PROFILE; aws s3 cp "$source_file" "${s3_base}/source/$(basename "$source_file")" \
-        --metadata "artifact-type=source,model-name=${RIVA_ASR_MODEL_NAME},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
+        --metadata "artifact-type=source,model-name=${RIVA_MODEL_SELECTED},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
         --storage-class STANDARD --region us-east-2); then
         log "Source archive uploaded successfully"
     else
@@ -635,7 +638,7 @@ EOF
     # Upload primary .riva file with progress
     log "Uploading primary model file ($(du -h "$primary_riva_file" | cut -f1))..."
     if (unset AWS_PROFILE; aws s3 cp "$primary_riva_file" "${s3_base}/models/$(basename "$primary_riva_file")" \
-        --metadata "artifact-type=riva-model,model-name=${RIVA_ASR_MODEL_NAME},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
+        --metadata "artifact-type=riva-model,model-name=${RIVA_MODEL_SELECTED},model-version=${MODEL_VERSION},upload-timestamp=${upload_timestamp}" \
         --storage-class STANDARD --region us-east-2); then
         log "Primary model file uploaded successfully"
     else
@@ -682,7 +685,7 @@ upload_bintarball_reference_staging() {
     manifest_file=$(cat "${RIVA_STATE_DIR}/bintarball_manifest")
 
     # Put deployment metadata directly in bintarball structure (not separate staging)
-    local bintarball_metadata_prefix="bintarball/deployment-metadata/${ENV}/${RIVA_ASR_MODEL_NAME}/${MODEL_VERSION}"
+    local bintarball_metadata_prefix="bintarball/deployment-metadata/${ENV_VERSION}/${RIVA_MODEL_SELECTED}/${MODEL_VERSION}"
     local s3_base="s3://${NVIDIA_DRIVERS_S3_BUCKET}/${bintarball_metadata_prefix}"
     local upload_timestamp
     upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -706,8 +709,8 @@ upload_bintarball_reference_staging() {
     cat > "$completion_file" << EOF
 Bintarball Deployment Ready
 Deployment Type: bintarball_native
-Model: ${RIVA_ASR_MODEL_NAME} ${MODEL_VERSION}
-Language: ${RIVA_ASR_LANG_CODE}
+Model: ${RIVA_MODEL_SELECTED} ${MODEL_VERSION}
+Language: ${RIVA_LANGUAGE_CODE}
 Completed: ${upload_timestamp}
 Run ID: ${RUN_ID}
 
@@ -848,7 +851,7 @@ generate_staging_summary() {
     echo
     echo "📦 MODEL ARTIFACTS STAGING SUMMARY"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🎯 Model: ${RIVA_ASR_MODEL_NAME} (${RIVA_ASR_LANG_CODE})"
+    echo "🎯 Model: ${RIVA_MODEL_SELECTED} (${RIVA_LANGUAGE_CODE})"
     echo "📋 Version: ${MODEL_VERSION}"
     echo "🗂️  S3 Location: $s3_base"
     echo "🔐 Checksums: Validated"
