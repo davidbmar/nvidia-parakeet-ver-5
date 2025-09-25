@@ -1,8 +1,9 @@
 {
-  "instance_id": "i-0f90ee8817cd949c2",
-  "public_ip": "52.14.255.68",
+  "instance_id": "i-06a36632f4d99f97b",
   "instance_type": "g4dn.xlarge",
-  "state": "running",
-  "created_at": "2025-09-21T22:15:00Z",
-  "deployment_id": "riva-20250921-183537"
+  "ami_id": "ami-097ce8c584be0264b",
+  "security_group_id": "sg-0ab6bbbeaadd9924f",
+  "key_name": "dbm-sep23-2025",
+  "region": "us-east-2",
+  "created_at": "2025-09-24T04:01:38Z"
 }

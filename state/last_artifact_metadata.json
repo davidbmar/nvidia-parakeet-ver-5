@@ -1,0 +1,47 @@
+{
+  "artifact_id": "parakeet-rnnt-en-us-v2025.09",
+  "created_at": "2025-09-23T05:34:15Z",
+  "model": {
+    "name": "parakeet-rnnt-en-us",
+    "version": "v2025.09",
+    "language_code": "en-US",
+    "type": "speech_recognition",
+    "architecture": "rnnt",
+    "description": "Parakeet RNNT model for en-US speech recognition"
+  },
+  "source": {
+    "uri": "s3://dbm-cf-2-web/bintarball/riva-models/parakeet/parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz",
+    "filename": "source_model.tar.gz",
+    "size_bytes": 3980563622,
+    "size_human": "3796MB",
+    "sha256": "478d53c5ff7ef1e0ef4ae3d6b2d1820d3399d87acdaf7559c92e647ad4f6f2f4",
+    "download_duration": "unknown"
+  },
+  "primary_model": {
+    "filename": "Parakeet-RNNT-XXL-1.1b_spe1024_en-US_8.1.riva",
+    "relative_path": "extracted/parakeet-rnnt-riva-1-1b-en-us_vdeployable_v8.1/Parakeet-RNNT-XXL-1.1b_spe1024_en-US_8.1.riva",
+    "size_bytes": 3979963574,
+    "size_human": "3795MB",
+    "sha256": "eebb4b726af80aa7c596e43d9fd027ac8970e35af3d9e00daee5c8fb6b36a656",
+    "format": ".riva"
+  },
+  "deployment": {
+    "environment": "prod",
+    "s3_bucket": "dbm-cf-2-web",
+    "s3_prefix": "prod/parakeet-rnnt-en-us/v2025.09",
+    "retention_days": 90,
+    "staging_complete": true
+  },
+  "build_info": {
+    "script": "086",
+    "run_id": "086-20250923-053141-d6cf0049",
+    "build_host": "ip-172-31-44-30",
+    "aws_region": "us-east-2",
+    "preparation_timestamp": "2025-09-23T05:34:15Z"
+  },
+  "validation": {
+    "checksums_verified": true,
+    "archive_extracted": true,
+    "riva_files_found": 1
+  }
+}

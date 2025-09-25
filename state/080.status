@@ -1,5 +1,6 @@
 status=failure
-log=/home/ubuntu/event-b/nvidia-parakeet-ver-6/logs/080-start-with-shim-20250921-001512.log
-timestamp=2025-09-21T00:15:22+0000
+log=/home/ubuntu/event-b/nvidia-parakeet-ver-6/logs/080-20250922-030107-87056677.log
+timestamp=2025-09-22T03:01:11+0000
 schema=1
 exit_code=30
+duration_ms=3963

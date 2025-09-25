@@ -1,0 +1,6 @@
+status=failure
+log=/home/ubuntu/event-b/nvidia-parakeet-ver-6/logs/090-20250922-033528-b44d2f67.log
+timestamp=2025-09-22T03:35:28+0000
+schema=1
+exit_code=40
+duration_ms=221
