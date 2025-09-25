@@ -27,7 +27,7 @@ REQUIRED_VARS=(
 # Optional variables with defaults
 : "${DEPLOYMENT_TRANSPORT:=ssh}"
 : "${BUILD_TIMEOUT:=1800}"  # 30 minutes
-: "${RIVA_BUILD_OPTS:=--decoding=greedy}"
+: "${RIVA_BUILD_OPTS:=--decoder_type=greedy}"
 : "${OUTPUT_FORMAT:=riva}"  # riva or triton
 : "${ENABLE_GPU:=1}"
 
