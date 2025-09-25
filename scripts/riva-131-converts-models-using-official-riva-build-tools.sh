@@ -80,50 +80,101 @@ download_artifacts_to_worker() {
     local s3_base
     s3_base=$(cat "${RIVA_STATE_DIR}/s3_staging_uri")
 
-    log "Downloading staged artifacts from S3 to GPU worker: $s3_base"
+    log "Downloading artifacts for bintarball deployment from: $s3_base"
 
-    local download_script=$(cat << EOF
+    # Create local temp directory for download
+    local temp_dir="/tmp/riva-artifacts-$$"
+    mkdir -p "$temp_dir/input"
+
+    # Download artifacts from S3 on control machine (which has AWS CLI configured)
+    log "Downloading deployment metadata from S3..."
+
+    # First, check if deployment is ready (bintarball structure uses deployment_ready.txt)
+    log "Checking deployment readiness..."
+    if aws s3 cp "${s3_base}/deployment_ready.txt" "$temp_dir/deployment_ready.txt" >/dev/null 2>&1; then
+        log "✅ Deployment readiness verified"
+        cat "$temp_dir/deployment_ready.txt"
+    else
+        err "❌ Deployment not ready or inaccessible"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Download deployment.json to get bintarball references
+    log "Downloading deployment configuration..."
+    aws s3 cp "${s3_base}/deployment.json" "$temp_dir/deployment.json"
+
+    # Parse the deployment.json to get model archive location
+    local model_s3_uri
+    model_s3_uri=$(cat "$temp_dir/deployment.json" | jq -r '.bintarball_references.model_archive.s3_uri')
+
+    log "Model archive location: $model_s3_uri"
+
+    # Download the model tar.gz file
+    log "Downloading model archive from bintarball..."
+    local model_filename=$(basename "$model_s3_uri")
+    aws s3 cp "$model_s3_uri" "$temp_dir/input/$model_filename"
+
+    # Extract the model archive
+    log "Extracting model archive..."
+    cd "$temp_dir/input"
+    tar -xzf "$model_filename"
+
+    # Remove the tar.gz file after extraction to save space
+    rm "$model_filename"
+
+    log "Verifying extracted files..."
+
+    # The extracted content should contain .riva files
+    riva_files=$(find . -name "*.riva" -type f | wc -l)
+    if [[ $riva_files -gt 0 ]]; then
+        log "✅ Found $riva_files .riva model files"
+        find . -name "*.riva" -type f -exec echo "  Model: {}" \; -exec du -h {} \;
+    else
+        err "❌ No .riva files found in extracted archive"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Create directory structure for riva-build
+    mkdir -p models
+
+    # Move .riva files to models directory
+    find . -name "*.riva" -type f -not -path "./models/*" -exec mv {} models/ \;
+
+    # Create source directory with any remaining files
+    mkdir -p source
+    find . -type f -not -path "./models/*" -not -path "./source/*" -exec mv {} source/ \; 2>/dev/null || true
+
+    log "✅ Model archive processed and organized"
+    log "Directory structure:"
+    log "  Models: $(find models -type f | wc -l) files"
+    log "  Source: $(find source -type f 2>/dev/null | wc -l || echo 0) files"
+
+    # Now transfer to GPU worker
+    log "Transferring artifacts to GPU worker: ${GPU_INSTANCE_IP}"
+
+    # Create remote directory structure
+    ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "mkdir -p /tmp/riva-build/input"
+
+    # Transfer all files to GPU worker
+    log "Uploading artifacts via SCP..."
+    scp -r $ssh_opts "$temp_dir/input"/* "${remote_user}@${GPU_INSTANCE_IP}:/tmp/riva-build/input/"
+
+    # Verify transfer on GPU worker
+    log "Verifying transfer on GPU worker..."
+    local verify_script=$(cat << 'EOF'
 #!/bin/bash
 set -euo pipefail
 
-cd /tmp/riva-build
+cd /tmp/riva-build/input
 
-# First, verify staging is complete
-echo "Checking staging completion status..."
-if aws s3 cp "${s3_base}/staging_complete.txt" staging_check.txt >/dev/null 2>&1; then
-    echo "✅ Staging completion verified"
-    cat staging_check.txt
-else
-    echo "❌ Staging not complete or inaccessible"
-    exit 1
-fi
-
-# Download and verify manifest first
-echo "Downloading upload manifest..."
-aws s3 cp "${s3_base}/upload_manifest.json" input/upload_manifest.json
-echo "Manifest contents:"
-cat input/upload_manifest.json | jq -r '.files | keys[]' | while read key; do
-    size=\$(cat input/upload_manifest.json | jq -r ".files.\$key.size_bytes")
-    echo "  Expected: \$key (\$((size / 1024 / 1024))MB)"
-done
-
-echo "Downloading source model directory..."
-aws s3 sync "${s3_base}/source/" input/source/ --delete
-
-echo "Downloading models directory..."
-aws s3 sync "${s3_base}/models/" input/models/ --delete
-
-echo "Downloading metadata files..."
-aws s3 cp "${s3_base}/artifact.json" input/
-aws s3 cp "${s3_base}/checksums.sha256" input/
-
-echo "Verifying downloaded files against manifest..."
-cd input
+echo "Verifying transferred files..."
 
 # Verify source files
 if [[ -d "source" ]]; then
-    source_files=\$(find source -type f | wc -l)
-    echo "✅ Source directory: \$source_files files"
+    source_files=$(find source -type f | wc -l)
+    echo "✅ Source directory: $source_files files"
 else
     echo "❌ Source directory missing"
     exit 1
@@ -131,9 +182,9 @@ fi
 
 # Verify model files
 if [[ -d "models" ]]; then
-    model_files=\$(find models -name "*.riva" -type f | wc -l)
-    if [[ \$model_files -gt 0 ]]; then
-        echo "✅ Found \$model_files .riva model files"
+    model_files=$(find models -name "*.riva" -type f | wc -l)
+    if [[ $model_files -gt 0 ]]; then
+        echo "✅ Found $model_files .riva model files"
         find models -name "*.riva" -type f -exec echo "  Model: {}" \; -exec du -h {} \;
     else
         echo "❌ No .riva files found in models directory"
@@ -144,50 +195,22 @@ else
     exit 1
 fi
 
-# Verify checksums if available
-if [[ -f "checksums.sha256" ]]; then
-    echo "Verifying checksums..."
-    # Only verify files that are present in current directory structure
-    while IFS= read -r line; do
-        checksum=\$(echo "\$line" | cut -d' ' -f1)
-        filename=\$(echo "\$line" | cut -d' ' -f2-)
-
-        # Find the file in the new directory structure
-        found_file=""
-        if [[ -f "source/\$filename" ]]; then
-            found_file="source/\$filename"
-        elif [[ -f "models/\$filename" ]]; then
-            found_file="models/\$filename"
-        elif [[ -f "\$filename" ]]; then
-            found_file="\$filename"
-        fi
-
-        if [[ -n "\$found_file" ]]; then
-            actual_checksum=\$(sha256sum "\$found_file" | cut -d' ' -f1)
-            if [[ "\$actual_checksum" == "\$checksum" ]]; then
-                echo "✅ Checksum verified: \$found_file"
-            else
-                echo "❌ Checksum mismatch: \$found_file"
-                exit 1
-            fi
-        fi
-    done < checksums.sha256
-else
-    echo "⚠️  No checksums file found, skipping verification"
-fi
-
-echo "✅ All artifacts downloaded and verified"
-echo "Download summary:"
+echo "✅ All artifacts verified on GPU worker"
+echo "Transfer summary:"
 find /tmp/riva-build/input -type f | head -20
 EOF
     )
 
-    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "AWS_DEFAULT_REGION=${AWS_REGION} bash -s" <<< "$download_script"; then
-        log "Artifacts downloaded and verified on worker"
+    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$verify_script"; then
+        log "Artifacts successfully transferred and verified on GPU worker"
     else
-        err "Failed to download artifacts to worker"
+        err "Failed to verify artifacts on GPU worker"
+        rm -rf "$temp_dir"
         return 1
     fi
+
+    # Cleanup local temp directory
+    rm -rf "$temp_dir"
 
     end_step
 }
@@ -413,17 +436,21 @@ upload_converted_models() {
 
     log "Uploading converted models to S3: $s3_base"
 
-    local upload_script=$(cat << EOF
+    # Create local temp directory for download
+    local temp_dir="/tmp/riva-upload-$$"
+    mkdir -p "$temp_dir"
+
+    # First verify files exist on GPU worker
+    log "Verifying converted artifacts on GPU worker..."
+    local verify_script=$(cat << 'EOF'
 #!/bin/bash
 set -euo pipefail
 
 cd /tmp/riva-build
-upload_start=\$(date +%s)
-upload_timestamp=\$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-echo "Starting upload at \$upload_timestamp"
+echo "Verifying files exist before transfer..."
 
-# Verify files exist before upload
+# Verify files exist before transfer
 if [[ ! -f "output/${RIVA_ASR_MODEL_NAME}.riva" ]]; then
     echo "❌ Converted model file not found: output/${RIVA_ASR_MODEL_NAME}.riva"
     exit 1
@@ -434,37 +461,103 @@ if [[ ! -d "work/model_repository" ]]; then
     exit 1
 fi
 
-echo "Files to upload:"
-echo "  Converted model: \$(du -h "output/${RIVA_ASR_MODEL_NAME}.riva" | cut -f1)"
-echo "  Triton repository: \$(du -sh "work/model_repository" | cut -f1)"
-echo "  Build log: \$(du -h "build.log" | cut -f1 2>/dev/null || echo 'N/A')"
+echo "Files ready for transfer:"
+echo "  Converted model: $(du -h "output/${RIVA_ASR_MODEL_NAME}.riva" | cut -f1)"
+echo "  Triton repository: $(du -sh "work/model_repository" | cut -f1)"
+echo "  Build log: $(du -h "build.log" | cut -f1 2>/dev/null || echo 'N/A')"
 
-# Upload built model with metadata
-echo "Uploading converted .riva model..."
-aws s3 cp "output/${RIVA_ASR_MODEL_NAME}.riva" \\
-    "${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva" \\
-    --metadata "artifact-type=converted-model,build-version=${RIVA_SERVICEMAKER_VERSION},build-duration=${build_duration},upload-timestamp=\$upload_timestamp" \\
-    --storage-class STANDARD
-
-# Upload Triton repository
-echo "Uploading Triton model repository..."
-aws s3 sync "work/model_repository/" \\
-    "${s3_base}/triton_repository/" \\
-    --metadata "artifact-type=triton-repository,upload-timestamp=\$upload_timestamp" \\
-    --delete
-
-# Upload build log if available
+# Create file list with checksums for verification
+echo "Creating transfer manifest..."
+mkdir -p output_ready
+cp "output/${RIVA_ASR_MODEL_NAME}.riva" output_ready/
+cp -r work/model_repository output_ready/
 if [[ -f "build.log" ]]; then
-    echo "Uploading build log..."
-    aws s3 cp "build.log" "${s3_base}/logs/conversion.log" \\
-        --content-type "text/plain"
+    cp build.log output_ready/
 fi
 
-# Create comprehensive conversion manifest
-cat > conversion_manifest.json << MANIFEST_EOF
+cd output_ready
+find . -type f -exec sha256sum {} \; > transfer_checksums.txt
+echo "✅ Files prepared for transfer"
+EOF
+    )
+
+    if ! ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "RIVA_ASR_MODEL_NAME='${RIVA_ASR_MODEL_NAME}' bash -s" <<< "$verify_script"; then
+        err "Failed to verify files on GPU worker"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Transfer files from GPU worker to control machine
+    log "Downloading converted artifacts from GPU worker to control machine..."
+    scp -r $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}:/tmp/riva-build/output_ready"/* "$temp_dir/"
+
+    # Verify transfer
+    log "Verifying transferred files..."
+    cd "$temp_dir"
+
+    if [[ ! -f "${RIVA_ASR_MODEL_NAME}.riva" ]]; then
+        err "❌ Converted model file not found after transfer: ${RIVA_ASR_MODEL_NAME}.riva"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    if [[ ! -d "model_repository" ]]; then
+        err "❌ Triton repository not found after transfer: model_repository"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Verify checksums
+    if [[ -f "transfer_checksums.txt" ]]; then
+        log "Verifying transfer checksums..."
+        if sha256sum -c transfer_checksums.txt --quiet; then
+            log "✅ All file transfers verified with checksums"
+        else
+            err "❌ Checksum verification failed after transfer"
+            rm -rf "$temp_dir"
+            return 1
+        fi
+    fi
+
+    # Now upload to S3 from control machine
+    log "Starting S3 upload from control machine..."
+    upload_start=$(date +%s)
+    upload_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log "Files to upload:"
+    log "  Converted model: $(du -h "${RIVA_ASR_MODEL_NAME}.riva" | cut -f1)"
+    log "  Triton repository: $(du -sh "model_repository" | cut -f1)"
+    if [[ -f "build.log" ]]; then
+        log "  Build log: $(du -h "build.log" | cut -f1)"
+    fi
+
+    # Upload built model with metadata
+    log "Uploading converted .riva model..."
+    aws s3 cp "${RIVA_ASR_MODEL_NAME}.riva" \
+        "${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva" \
+        --metadata "artifact-type=converted-model,build-version=${RIVA_SERVICEMAKER_VERSION},build-duration=${build_duration},upload-timestamp=$upload_timestamp" \
+        --storage-class STANDARD
+
+    # Upload Triton repository
+    log "Uploading Triton model repository..."
+    aws s3 sync "model_repository/" \
+        "${s3_base}/triton_repository/" \
+        --metadata "artifact-type=triton-repository,upload-timestamp=$upload_timestamp" \
+        --delete
+
+    # Upload build log if available
+    if [[ -f "build.log" ]]; then
+        log "Uploading build log..."
+        aws s3 cp "build.log" "${s3_base}/logs/conversion.log" \
+            --content-type "text/plain"
+    fi
+
+    # Create comprehensive conversion manifest
+    log "Creating conversion manifest..."
+    cat > conversion_manifest.json << MANIFEST_EOF
 {
   "conversion_id": "${RUN_ID}",
-  "timestamp": "\$upload_timestamp",
+  "timestamp": "$upload_timestamp",
   "build_duration_seconds": ${build_duration},
   "model": {
     "name": "${RIVA_ASR_MODEL_NAME}",
@@ -482,12 +575,12 @@ cat > conversion_manifest.json << MANIFEST_EOF
   "artifacts": {
     "converted_model": {
       "s3_uri": "${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva",
-      "size_bytes": \$(stat -c%s "output/${RIVA_ASR_MODEL_NAME}.riva"),
-      "sha256": "\$(sha256sum "output/${RIVA_ASR_MODEL_NAME}.riva" | cut -d' ' -f1)"
+      "size_bytes": $(stat -c%s "${RIVA_ASR_MODEL_NAME}.riva"),
+      "sha256": "$(sha256sum "${RIVA_ASR_MODEL_NAME}.riva" | cut -d' ' -f1)"
     },
     "triton_repository": {
       "s3_uri": "${s3_base}/triton_repository/",
-      "model_count": \$(find "work/model_repository" -name "config.pbtxt" | wc -l)
+      "model_count": $(find "model_repository" -name "config.pbtxt" | wc -l)
     },
     "build_log": "${s3_base}/logs/conversion.log"
   },
@@ -499,35 +592,32 @@ cat > conversion_manifest.json << MANIFEST_EOF
 }
 MANIFEST_EOF
 
-# Upload manifest
-echo "Uploading conversion manifest..."
-aws s3 cp conversion_manifest.json "${s3_base}/conversion_manifest.json" \\
-    --content-type "application/json"
+    # Upload manifest
+    log "Uploading conversion manifest..."
+    aws s3 cp conversion_manifest.json "${s3_base}/conversion_manifest.json" \
+        --content-type "application/json"
 
-# Create completion marker
-echo "Conversion completed at \$upload_timestamp" > conversion_complete.txt
-echo "Build duration: ${build_duration} seconds" >> conversion_complete.txt
-echo "Next step: riva-088-deploy-riva-server.sh" >> conversion_complete.txt
-aws s3 cp conversion_complete.txt "${s3_base}/conversion_complete.txt" \\
-    --content-type "text/plain"
+    # Create completion marker
+    log "Creating completion marker..."
+    cat > conversion_complete.txt << COMPLETION_EOF
+Conversion completed at $upload_timestamp
+Build duration: ${build_duration} seconds
+Next step: riva-088-deploy-riva-server.sh
+COMPLETION_EOF
+    aws s3 cp conversion_complete.txt "${s3_base}/conversion_complete.txt" \
+        --content-type "text/plain"
 
-upload_end=\$(date +%s)
-upload_duration=\$((upload_end - upload_start))
-echo "✅ All artifacts uploaded to S3 in \${upload_duration}s"
-echo "Upload summary:"
-echo "  Base URI: ${s3_base}"
-echo "  Converted model: ${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva"
-echo "  Triton repository: ${s3_base}/triton_repository/"
-echo "  Conversion manifest: ${s3_base}/conversion_manifest.json"
-EOF
-    )
+    upload_end=$(date +%s)
+    upload_duration=$((upload_end - upload_start))
+    log "✅ All artifacts uploaded to S3 in ${upload_duration}s"
+    log "Upload summary:"
+    log "  Base URI: ${s3_base}"
+    log "  Converted model: ${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva"
+    log "  Triton repository: ${s3_base}/triton_repository/"
+    log "  Conversion manifest: ${s3_base}/conversion_manifest.json"
 
-    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "AWS_DEFAULT_REGION=${AWS_REGION} bash -s" <<< "$upload_script"; then
-        log "Converted models uploaded to S3 successfully"
-    else
-        err "Failed to upload converted models to S3"
-        return 1
-    fi
+    # Cleanup local temp directory
+    rm -rf "$temp_dir"
 
     # Save converted model S3 locations for next script
     echo "${s3_base}/triton_repository/" > "${RIVA_STATE_DIR}/triton_repository_s3"
@@ -615,7 +705,6 @@ main() {
     RIVA_ASR_LANG_CODE="$RIVA_LANGUAGE_CODE"
     MODEL_VERSION=$(echo "$RIVA_MODEL" | sed 's/.*_v\([0-9.]*\)\.tar\.gz/v\1/')
     ENV="$ENV_VERSION"
-    RIVA_SERVICEMAKER_VERSION=$(echo "$RIVA_SERVER_SELECTED" | sed 's/riva-speech-\([0-9.]*\)\.tar\.gz/\1/')
 
     require_env_vars "${REQUIRED_VARS[@]}"
 
@@ -624,6 +713,21 @@ main() {
         err "No staged artifacts found. Run riva-086-prepare-model-artifacts.sh first."
         return 1
     fi
+
+    # Get the actual servicemaker version from deployment.json after download
+    local s3_base
+    s3_base=$(cat "${RIVA_STATE_DIR}/s3_staging_uri")
+
+    log "Reading deployment configuration to determine servicemaker version..."
+    local temp_deployment_file="/tmp/deployment-config-$$.json"
+    aws s3 cp "${s3_base}/deployment.json" "$temp_deployment_file"
+
+    local container_s3_uri
+    container_s3_uri=$(cat "$temp_deployment_file" | jq -r '.bintarball_references.container_image.s3_uri')
+    RIVA_SERVICEMAKER_VERSION=$(echo "$container_s3_uri" | sed 's/.*riva-speech-\([0-9.]*\)\.tar\.gz/\1/')
+
+    log "Using servicemaker version: $RIVA_SERVICEMAKER_VERSION (from deployment.json)"
+    rm -f "$temp_deployment_file"
 
     setup_remote_environment
     download_artifacts_to_worker
