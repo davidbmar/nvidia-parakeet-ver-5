@@ -366,16 +366,30 @@ run_on_server "
         CONTAINER_FILE=\"riva-speech-$RIVA_VERSION.tar.gz\"
         CACHE_DIR=\"/mnt/cache/riva-cache\"
 
-        mkdir -p \$CACHE_DIR
-        cd \$CACHE_DIR
+        # Create cache directory if possible
+        if sudo mkdir -p \$CACHE_DIR 2>/dev/null; then
+            sudo chmod 777 /mnt/cache 2>/dev/null || echo '⚠️ Could not set cache permissions, continuing anyway'
+            sudo chmod 777 \$CACHE_DIR 2>/dev/null || echo '⚠️ Could not set cache directory permissions, continuing anyway'
+            cd \$CACHE_DIR
+        else
+            echo '⚠️ Could not create cache directory, using /tmp instead'
+            CACHE_DIR=\"/tmp/riva-cache\"
+            mkdir -p \$CACHE_DIR
+            cd \$CACHE_DIR
+        fi
 
         echo '🔍 Checking S3 cache for RIVA container...'
         if [ ! -f \"\$CONTAINER_FILE\" ]; then
-            echo '📥 Downloading from S3...'
-            if aws s3 cp \"\$S3_CONTAINER_PATH\" . --region us-east-2; then
-                echo '✅ Downloaded from S3 successfully'
+            if command -v aws &> /dev/null; then
+                echo '📥 Downloading from S3...'
+                if aws s3 cp \"\$S3_CONTAINER_PATH\" . --region us-east-2; then
+                    echo '✅ Downloaded from S3 successfully'
+                else
+                    echo '⚠️ S3 download failed, will try docker pull'
+                    CONTAINER_FILE=\"\"
+                fi
             else
-                echo '⚠️ S3 download failed, will try docker pull'
+                echo '⚠️ AWS CLI not available, skipping S3 download'
                 CONTAINER_FILE=\"\"
             fi
         else
@@ -402,14 +416,20 @@ run_on_server "
             echo '📥 Pulling from NVIDIA registry...'
             if docker pull nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION; then
                 echo '✅ Pulled from NVIDIA successfully'
-                # Save to S3 for future use
-                echo '💾 Saving to S3 cache for future use...'
-                TEMP_TAR=\"/tmp/riva-speech-$RIVA_VERSION.tar.gz\"
-                docker save nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION | gzip > \"\$TEMP_TAR\"
-                aws s3 cp \"\$TEMP_TAR\" \"s3://dbm-cf-2-web/bintarball/riva-containers/riva-speech-$RIVA_VERSION.tar.gz\" --region us-east-2
-                cp \"\$TEMP_TAR\" \"\$CACHE_DIR/\$CONTAINER_FILE\"
-                rm \"\$TEMP_TAR\"
-                echo '✅ Cached to S3 for future deployments'
+                # Save to S3 for future use (if AWS CLI is available)
+                if command -v aws &> /dev/null; then
+                    echo '💾 Saving to S3 cache for future use...'
+                    TEMP_TAR=\"/tmp/riva-speech-$RIVA_VERSION.tar.gz\"
+                    docker save nvcr.io/nvidia/riva/riva-speech:$RIVA_VERSION | gzip > \"\$TEMP_TAR\"
+                    aws s3 cp \"\$TEMP_TAR\" \"s3://dbm-cf-2-web/bintarball/riva-containers/riva-speech-$RIVA_VERSION.tar.gz\" --region us-east-2 || echo '⚠️ S3 upload failed, continuing anyway'
+                    if [ -d \"\$CACHE_DIR\" ]; then
+                        cp \"\$TEMP_TAR\" \"\$CACHE_DIR/\$CONTAINER_FILE\" || echo '⚠️ Local cache failed, continuing anyway'
+                    fi
+                    rm \"\$TEMP_TAR\"
+                    echo '✅ Cached to S3 for future deployments'
+                else
+                    echo '⚠️ AWS CLI not available, skipping S3 caching'
+                fi
             else
                 echo '❌ Failed to pull from NVIDIA registry'
                 exit 1
