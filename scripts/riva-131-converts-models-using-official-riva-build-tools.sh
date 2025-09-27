@@ -355,6 +355,9 @@ set -euo pipefail
 
 cd /tmp/riva-build
 
+# Set the normalized model name passed from control machine
+NORMALIZED_MODEL_NAME="${RIVA_ASR_MODEL_NAME}"
+
 # Find the .riva file in the new directory structure
 RIVA_FILE=\$(find input/models -name "*.riva" -type f | head -1)
 if [[ -z "\$RIVA_FILE" ]]; then
@@ -370,12 +373,12 @@ echo "File size: \$(du -h "\$RIVA_FILE" | cut -f1)"
 # Determine output file path
 OUTPUT_DIR="/tmp/riva-build/output"
 mkdir -p "\$OUTPUT_DIR"
-OUTPUT_FILE="\${OUTPUT_DIR}/${RIVA_ASR_MODEL_NAME}.riva"
+OUTPUT_FILE="\${OUTPUT_DIR}/\${NORMALIZED_MODEL_NAME}.riva"
 
 echo "Building model with riva-build..."
 echo "Input model: \$RIVA_FILE"
 echo "Output file: \$OUTPUT_FILE"
-echo "Model name: ${RIVA_ASR_MODEL_NAME}"
+echo "Model name: \$NORMALIZED_MODEL_NAME"
 echo "Language: ${RIVA_ASR_LANG_CODE}"
 echo "Build options: ${RIVA_BUILD_OPTS}"
 echo "GPU enabled: ${ENABLE_GPU}"
@@ -389,7 +392,7 @@ if ! docker images | grep -q "riva-speech.*servicemaker"; then
 fi
 
 echo "Starting riva-build process at \$(date)..."
-echo "Command: docker run --rm --gpus ${ENABLE_GPU:+all} -v /tmp/riva-build:/workspace -e NGC_API_KEY=[REDACTED] --workdir /workspace ${servicemaker_image} riva-build speech_recognition /workspace/output/${RIVA_ASR_MODEL_NAME}.riva /workspace/\${RIVA_FILE#/tmp/riva-build/} --name=${RIVA_ASR_MODEL_NAME} --language_code=${RIVA_ASR_LANG_CODE} ${RIVA_BUILD_OPTS}"
+echo "Command: docker run --rm --gpus ${ENABLE_GPU:+all} -v /tmp/riva-build:/workspace -e NGC_API_KEY=[REDACTED] --workdir /workspace ${servicemaker_image} riva-build speech_recognition /workspace/output/\${NORMALIZED_MODEL_NAME}.riva /workspace/\${RIVA_FILE#/tmp/riva-build/} --name=\${NORMALIZED_MODEL_NAME} --language_code=${RIVA_ASR_LANG_CODE} ${RIVA_BUILD_OPTS}"
 
 # Create build log
 exec > >(tee -a /tmp/riva-build/build.log)
@@ -403,9 +406,9 @@ docker run --rm \\
     --workdir /workspace \\
     "${servicemaker_image}" \\
     riva-build speech_recognition \\
-        "/workspace/output/${RIVA_ASR_MODEL_NAME}.riva" \\
+        "/workspace/output/\${NORMALIZED_MODEL_NAME}.riva" \\
         "/workspace/\${RIVA_FILE#/tmp/riva-build/}" \\
-        --name="${RIVA_ASR_MODEL_NAME}" \\
+        --name="\${NORMALIZED_MODEL_NAME}" \\
         --language_code="${RIVA_ASR_LANG_CODE}" \\
         ${RIVA_BUILD_OPTS}
 
@@ -481,22 +484,26 @@ set -euo pipefail
 
 cd /tmp/riva-build
 
+# Set the normalized model name passed from control machine
+NORMALIZED_MODEL_NAME="${RIVA_ASR_MODEL_NAME}"
+
 # Create model repository structure
 REPO_DIR="work/model_repository"
-MODEL_DIR="\${REPO_DIR}/${RIVA_ASR_MODEL_NAME}"
+MODEL_DIR="\${REPO_DIR}/\${NORMALIZED_MODEL_NAME}"
 
 echo "Creating repository structure: \$MODEL_DIR"
+echo "Using normalized model name: \$NORMALIZED_MODEL_NAME"
 mkdir -p "\${MODEL_DIR}/1"
 
 # Copy the built model
-BUILT_MODEL="output/${RIVA_ASR_MODEL_NAME}.riva"
+BUILT_MODEL="output/\${NORMALIZED_MODEL_NAME}.riva"
 if [[ -f "\$BUILT_MODEL" ]]; then
     echo "Copying built model to repository..."
     cp "\$BUILT_MODEL" "\${MODEL_DIR}/1/model.riva"
 
     # Create model configuration
-    cat > "\${MODEL_DIR}/config.pbtxt" << 'CONFIG_EOF'
-name: "${RIVA_ASR_MODEL_NAME}"
+    cat > "\${MODEL_DIR}/config.pbtxt" << CONFIG_EOF
+name: "\${NORMALIZED_MODEL_NAME}"
 platform: "riva"
 max_batch_size: 8
 input {
@@ -599,17 +606,20 @@ upload_converted_models() {
 
     # First verify files exist on GPU worker
     log "Verifying converted artifacts on GPU worker..."
-    local verify_script=$(cat << 'EOF'
+    local verify_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
 
 cd /tmp/riva-build
 
+# Set the normalized model name passed from control machine
+NORMALIZED_MODEL_NAME="${RIVA_ASR_MODEL_NAME}"
+
 echo "Verifying files exist before transfer..."
 
 # Verify files exist before transfer
-if [[ ! -f "output/${RIVA_ASR_MODEL_NAME}.riva" ]]; then
-    echo "❌ Converted model file not found: output/${RIVA_ASR_MODEL_NAME}.riva"
+if [[ ! -f "output/\${NORMALIZED_MODEL_NAME}.riva" ]]; then
+    echo "❌ Converted model file not found: output/\${NORMALIZED_MODEL_NAME}.riva"
     exit 1
 fi
 
@@ -619,14 +629,14 @@ if [[ ! -d "work/model_repository" ]]; then
 fi
 
 echo "Files ready for transfer:"
-echo "  Converted model: $(du -h "output/${RIVA_ASR_MODEL_NAME}.riva" | cut -f1)"
-echo "  Triton repository: $(du -sh "work/model_repository" | cut -f1)"
-echo "  Build log: $(du -h "build.log" | cut -f1 2>/dev/null || echo 'N/A')"
+echo "  Converted model: \$(du -h "output/\${NORMALIZED_MODEL_NAME}.riva" | cut -f1)"
+echo "  Triton repository: \$(du -sh "work/model_repository" | cut -f1)"
+echo "  Build log: \$(du -h "build.log" | cut -f1 2>/dev/null || echo 'N/A')"
 
 # Create file list with checksums for verification
 echo "Creating transfer manifest..."
 mkdir -p output_ready
-cp "output/${RIVA_ASR_MODEL_NAME}.riva" output_ready/
+cp "output/\${NORMALIZED_MODEL_NAME}.riva" output_ready/
 cp -r work/model_repository output_ready/
 if [[ -f "build.log" ]]; then
     cp build.log output_ready/
@@ -642,7 +652,7 @@ echo "✅ Files prepared for transfer (excluding transfer_checksums.txt and buil
 EOF
     )
 
-    if ! ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "RIVA_ASR_MODEL_NAME='${RIVA_ASR_MODEL_NAME}' bash -s" <<< "$verify_script"; then
+    if ! ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$verify_script"; then
         err "Failed to verify files on GPU worker"
         rm -rf "$temp_dir"
         return 1
@@ -840,10 +850,11 @@ COMPLETION_EOF
     # Cleanup local temp directory
     rm -rf "$temp_dir"
 
-    # Save converted model S3 locations for next script
+    # Save converted model S3 locations and normalized name for next script
     echo "${s3_base}/triton_repository/" > "${RIVA_STATE_DIR}/triton_repository_s3"
     echo "${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva" > "${RIVA_STATE_DIR}/converted_model_s3"
     echo "${s3_base}/conversion_manifest.json" > "${RIVA_STATE_DIR}/conversion_manifest_s3"
+    echo "${RIVA_ASR_MODEL_NAME}" > "${RIVA_STATE_DIR}/normalized_model_name"
 
     end_step
 }

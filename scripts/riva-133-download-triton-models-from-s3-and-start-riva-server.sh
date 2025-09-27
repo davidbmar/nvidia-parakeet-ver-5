@@ -25,9 +25,13 @@ if [[ -z "${RIVA_CONTAINER_VERSION:-}" ]]; then
     fi
 fi
 
-if [[ -z "${RIVA_ASR_MODEL_NAME:-}" ]]; then
+# Load normalized model name from previous step
+if [[ -f "${RIVA_STATE_DIR}/normalized_model_name" ]]; then
+    RIVA_ASR_MODEL_NAME=$(cat "${RIVA_STATE_DIR}/normalized_model_name")
+    log "Using normalized model name from riva-131: $RIVA_ASR_MODEL_NAME"
+elif [[ -z "${RIVA_ASR_MODEL_NAME:-}" ]]; then
     RIVA_ASR_MODEL_NAME="parakeet-rnnt-1-1b-en-us"
-    log "WARNING - FALLBACK: RIVA_ASR_MODEL_NAME not set, speculating standard name: $RIVA_ASR_MODEL_NAME"
+    log "WARNING - FALLBACK: RIVA_ASR_MODEL_NAME not found in state, speculating standard name: $RIVA_ASR_MODEL_NAME"
 fi
 
 if [[ -z "${RIVA_GRPC_PORT:-}" ]]; then
