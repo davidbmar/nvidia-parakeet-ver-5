@@ -19,6 +19,7 @@ REQUIRED_VARS=(
     "RIVA_MODEL_SELECTED"
     "RIVA_LANGUAGE_CODE"
     "DEPLOYMENT_APPROACH"
+    "RIVA_SERVER_PATH"
 )
 
 # Optional variables with defaults
@@ -38,7 +39,7 @@ create_bintarball_reference_staging() {
 
     # Use existing bintarball structure instead of duplicating
     local bintarball_model_uri="s3://${NVIDIA_DRIVERS_S3_BUCKET}/bintarball/riva-models/parakeet/parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz"
-    local bintarball_container_uri="${RIVA_SERVER_PATH:-s3://${NVIDIA_DRIVERS_S3_BUCKET}/bintarball/riva-containers/riva-speech-2.15.0.tar.gz}"
+    local bintarball_container_uri="${RIVA_SERVER_PATH}"
 
     log "🔗 Using existing bintarball structure (no duplication)"
     log "  Model: $bintarball_model_uri"
@@ -69,6 +70,11 @@ create_bintarball_reference_staging() {
     # parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz -> v8.1
     MODEL_VERSION=$(echo "${RIVA_MODEL_SELECTED}" | sed 's/.*_v\([0-9.]*\)\.tar\.gz/v\1/')
 
+    # Extract container path from bintarball_container_uri for JSON
+    # s3://bucket/bintarball/riva-containers/riva-speech-2.19.0.tar.gz -> bintarball/riva-containers/riva-speech-2.19.0.tar.gz
+    local container_path
+    container_path=$(echo "$bintarball_container_uri" | sed 's|s3://[^/]*/||')
+
     # Create lightweight deployment manifest
     local manifest_file="${work_dir}/bintarball_deployment.json"
     local timestamp
@@ -95,7 +101,7 @@ create_bintarball_reference_staging() {
     },
     "container_image": {
       "s3_uri": "$bintarball_container_uri",
-      "path": "bintarball/riva-containers/riva-speech-2.15.0.tar.gz"
+      "path": "$container_path"
     }
   },
   "deployment": {
