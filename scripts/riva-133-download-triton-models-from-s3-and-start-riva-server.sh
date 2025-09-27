@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# RIVA-088: Deploy RIVA Server
+# RIVA-133: Deploy RIVA Server
 #
 # Goal: Deploy RIVA server with converted Triton models
 # Downloads Triton model repository from S3 and starts RIVA server
@@ -9,7 +9,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/_lib.sh"
 
-init_script "088" "Deploy RIVA Server" "Deploy RIVA server with converted models" "" ""
+init_script "133" "Deploy RIVA Server" "Deploy RIVA server with converted models" "" ""
 
 # Auto-derive missing environment variables with fallbacks
 if [[ -z "${RIVA_CONTAINER_VERSION:-}" ]]; then

@@ -533,6 +533,43 @@ EOF
 
     if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$repository_script"; then
         log "Triton model repository created successfully"
+
+        # Validate repository structure (ChatGPT recommendation)
+        local validation_script=$(cat << EOF
+#!/bin/bash
+set -euo pipefail
+
+cd /tmp/riva-build/work/model_repository
+
+echo "🔍 Validating repository structure..."
+for model_dir in */; do
+    model_dir=\${model_dir%/}  # Remove trailing slash
+    config_file="\$model_dir/config.pbtxt"
+
+    if [[ -f "\$config_file" ]]; then
+        config_name=\$(grep '^name:' "\$config_file" | sed 's/name: *"\(.*\)"/\1/')
+        if [[ "\$model_dir" == "\$config_name" ]]; then
+            echo "✅ \$model_dir: directory name matches config name"
+        else
+            echo "❌ \$model_dir: directory name '\$model_dir' != config name '\$config_name'"
+            exit 1
+        fi
+    else
+        echo "❌ \$model_dir: missing config.pbtxt"
+        exit 1
+    fi
+done
+
+echo "✅ Repository structure validation passed"
+EOF
+        )
+
+        if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$validation_script"; then
+            log "Repository structure validation passed"
+        else
+            err "Repository structure validation failed - directory names must match config.pbtxt names"
+            return 1
+        fi
     else
         err "Failed to create Triton model repository"
         return 1
@@ -885,7 +922,8 @@ main() {
 
     # Derive variables from existing .env variables for compatibility
     RIVA_MODELS_S3_BUCKET="$NVIDIA_DRIVERS_S3_BUCKET"
-    RIVA_ASR_MODEL_NAME="$RIVA_MODEL"
+    # Normalize model name: remove .tar.gz suffix and create clean model name
+    RIVA_ASR_MODEL_NAME=$(echo "$RIVA_MODEL" | sed 's/\.tar\.gz$//' | sed 's/parakeet-rnnt-riva-/parakeet-rnnt-/')
     RIVA_ASR_LANG_CODE="$RIVA_LANGUAGE_CODE"
     MODEL_VERSION=$(echo "$RIVA_MODEL" | sed 's/.*_v\([0-9.]*\)\.tar\.gz/v\1/')
     ENV="$ENV_VERSION"
