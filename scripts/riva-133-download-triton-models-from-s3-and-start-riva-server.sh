@@ -214,7 +214,7 @@ start_riva_server() {
 
     local riva_image="nvcr.io/nvidia/riva/riva-speech:${RIVA_CONTAINER_VERSION}"
 
-    log "Starting RIVA server in Riva mode with image: $riva_image"
+    log "Starting RIVA server with start-riva command using image: $riva_image"
 
     # Preflight validation (ChatGPT recommendation)
     log "🔍 Running preflight validation on model repository..."
@@ -294,7 +294,7 @@ PREFLIGHT_EOF
 #!/bin/bash
 set -euo pipefail
 
-echo "Starting RIVA server container in Riva mode (with custom backends)..."
+echo "Starting RIVA server container with start-riva command (enables custom backends)..."
 
 # Build Docker run command
 DOCKER_CMD="docker run -d \\
@@ -304,27 +304,21 @@ DOCKER_CMD="docker run -d \\
     -p ${RIVA_GRPC_PORT}:50051 \\
     -p ${RIVA_HTTP_PORT}:8000"
 
-# Add metrics port only if enabled (using port 9090 for riva_start.sh compatibility)
-METRICS_ARGS=""
+# Add metrics port only if enabled (using port 8002 for start-riva compatibility)
 if [[ "${ENABLE_METRICS}" == "true" ]]; then
-    DOCKER_CMD="\$DOCKER_CMD -p ${METRICS_PORT}:9090"
-    METRICS_ARGS="--metrics-port=9090"
+    DOCKER_CMD="\$DOCKER_CMD -p ${METRICS_PORT}:8002"
 fi
 
-# Add volume mounts and riva_start.sh command (Riva mode with custom backends)
+# Add volume mounts and start-riva command (Riva mode with custom backends)
 DOCKER_CMD="\$DOCKER_CMD \\
     -v ${RIVA_MODEL_REPO_PATH}:/data/models:ro \\
     -v /tmp/riva-logs:/opt/riva/logs \\
     ${riva_image} \\
-    bash -lc '/opt/riva/bin/riva_start.sh \\
-        --model-repo=/data/models \\
-        --enable-asr \\
-        --disable-nlp \\
-        --disable-tts \\
-        --grpc-port=${RIVA_GRPC_PORT} \\
-        --http-port=${RIVA_HTTP_PORT} \\
-        \${METRICS_ARGS} \\
-        --no-tls'"
+    start-riva \\
+        --asr_service=true \\
+        --nlp_service=false \\
+        --tts_service=false \\
+        --riva_uri=0.0.0.0:${RIVA_GRPC_PORT}"
 
 echo "Running: \$DOCKER_CMD"
 
