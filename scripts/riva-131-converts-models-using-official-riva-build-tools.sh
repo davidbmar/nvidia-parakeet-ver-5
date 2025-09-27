@@ -909,7 +909,8 @@ generate_conversion_summary() {
     echo
     echo "✅ Models converted and ready for deployment"
 
-    NEXT_SUCCESS="riva-088-deploy-riva-server.sh"
+    # Point to the Triton-only deploy step
+    NEXT_SUCCESS="riva-133-download-triton-models-from-s3-and-start-riva-server.sh"
 
     end_step
 }
