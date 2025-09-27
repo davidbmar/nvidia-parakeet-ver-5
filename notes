@@ -1,0 +1,36 @@
+RIVA install order:
+riva-005-setup-project-configuration.sh 
+riva-007-discover-s3-models.sh 
+riva-014-gpu-instance-manager.sh 
+riva-020-configure-aws-security-groups-enhanced.sh  - removes broad 0.0.0.0/0 and adds ip
+riva-021-setup-gpu-s3-readonly-access.sh
+
+riva-035-reboot-gpu-instance-after-drivers.sh 
+
+scripts/riva-041-install-gpu-prerequisites.sh  
+
+  New script sequence for RIVA deployment:
+  1. riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh - Downloads and stages
+   models
+  2. riva-131-converts-models-using-official-riva-build-tools.sh - Converts models using
+  riva-build
+  3. riva-132-install-riva-models.sh - Installs models into RIVA container
+  4. riva-133-deploys-riva-server-with-converted-models.sh - Deploys RIVA server
+  5. riva-134-end-to-end-validation-of-deployment.sh - Validates deployment
+  6. riva-135-build-and-deploy-models.sh - Alternative build and deploy
+
+
+-------------------
+OLD?
+  1. riva-085-validate-environment.sh - Validates prerequisites (build box + GPU worker)
+/scripts/riva-085-start-traditional-riva-server.sh 
+  2. riva-086-prepare-model-artifacts.sh - Downloads, validates, and stages model artifacts to S3
+  3. riva-087-convert-models.sh - Converts models using official riva-build tools
+  4. riva-088-deploy-riva-server.sh - Deploys RIVA server with converted models
+  5. riva-089-validate-deployment.sh - End-to-end validation of deployment
+
+
+
+
+
+

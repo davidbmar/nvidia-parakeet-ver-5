@@ -2,6 +2,60 @@
 
 This directory contains scripts that are no longer recommended for use.
 
+## NVIDIA Driver Installation Scripts (Deprecated September 27, 2025)
+
+The following 5 scripts have been replaced by a single unified script `riva-026-update-nvidia-driver-simple.sh`:
+
+### `riva-025-download-nvidia-gpu-drivers.sh`
+- **Purpose**: Downloaded NVIDIA drivers to S3 for backup/distribution
+- **Issue**: Complex S3 workflow, hardcoded 550.90.12 version
+- **Replacement**: Direct repository installation (apt install nvidia-driver-570)
+
+### `riva-030-transfer-drivers-to-gpu-instance.sh`
+- **Purpose**: Transferred drivers from S3 to GPU instance
+- **Issue**: Requires AWS CLI on GPU instance, complex error handling
+- **Replacement**: Direct repository installation eliminates transfer step
+
+### `riva-035-reboot-gpu-instance-after-drivers.sh`
+- **Purpose**: Rebooted GPU instance after driver staging
+- **Issue**: Manual reboot process, user intervention required
+- **Replacement**: Automated reboot and connectivity verification
+
+### `riva-040-install-nvidia-drivers-on-gpu.sh`
+- **Purpose**: Actually installed NVIDIA drivers from .run files
+- **Issue**: Complex manual installation, hardcoded 550.90.12 version
+- **Replacement**: Simple `apt install nvidia-driver-570` approach
+
+### `riva-042-fix-nvidia-driver-mismatch.sh`
+- **Purpose**: Fixed version mismatches between kernel modules and libraries
+- **Issue**: Complex symlink management after installation
+- **Replacement**: Repository installation handles this automatically
+
+### Migration Path for Driver Scripts
+
+Replace any calls to these scripts with:
+```bash
+./scripts/riva-026-update-nvidia-driver-simple.sh
+```
+
+This single script handles:
+- Version compatibility checking (570.86+ for RIVA 2.19.0)
+- Repository-based driver installation
+- Automatic reboot and verification
+- Status updates in .env file
+
+### Why These Driver Scripts Were Deprecated
+
+Our manual testing showed that the simple repository approach:
+```bash
+sudo apt install nvidia-driver-570 -y
+sudo reboot
+```
+
+Was much more reliable than the complex 5-script chain involving S3 downloads, transfers, and manual .run file installation.
+
+## Other Deprecated Scripts
+
 ## riva-080-deployment-s3-microservices.sh
 **Status**: Deprecated
 **Reason**: Monolithic script with Triton startup issues

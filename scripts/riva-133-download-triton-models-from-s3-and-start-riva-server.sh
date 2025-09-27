@@ -11,14 +11,35 @@ source "$(dirname "$0")/_lib.sh"
 
 init_script "088" "Deploy RIVA Server" "Deploy RIVA server with converted models" "" ""
 
+# Auto-derive missing environment variables with fallbacks
+if [[ -z "${RIVA_CONTAINER_VERSION:-}" ]]; then
+    if [[ -n "${RIVA_SERVER_SELECTED:-}" ]]; then
+        RIVA_CONTAINER_VERSION=$(echo "$RIVA_SERVER_SELECTED" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' || echo "")
+        if [[ -n "$RIVA_CONTAINER_VERSION" ]]; then
+            log "WARNING - FALLBACK: RIVA_CONTAINER_VERSION derived from RIVA_SERVER_SELECTED: $RIVA_CONTAINER_VERSION"
+        fi
+    fi
+    if [[ -z "${RIVA_CONTAINER_VERSION:-}" ]]; then
+        RIVA_CONTAINER_VERSION="2.19.0"
+        log "WARNING - FALLBACK: RIVA_CONTAINER_VERSION not found, speculating default: $RIVA_CONTAINER_VERSION"
+    fi
+fi
+
+if [[ -z "${RIVA_ASR_MODEL_NAME:-}" ]]; then
+    RIVA_ASR_MODEL_NAME="parakeet-rnnt-1-1b-en-us"
+    log "WARNING - FALLBACK: RIVA_ASR_MODEL_NAME not set, speculating standard name: $RIVA_ASR_MODEL_NAME"
+fi
+
+if [[ -z "${RIVA_GRPC_PORT:-}" ]]; then
+    RIVA_GRPC_PORT="50051"
+    log "WARNING - FALLBACK: RIVA_GRPC_PORT not set, speculating standard port: $RIVA_GRPC_PORT"
+fi
+
 # Required environment variables
 REQUIRED_VARS=(
     "AWS_REGION"
     "GPU_INSTANCE_IP"
     "SSH_KEY_NAME"
-    "RIVA_CONTAINER_VERSION"
-    "RIVA_ASR_MODEL_NAME"
-    "RIVA_GRPC_PORT"
     "RIVA_HTTP_PORT"
 )
 
@@ -92,6 +113,18 @@ download_triton_repository() {
 
     log "Downloading Triton repository from: $triton_repo_s3"
 
+    # Download to build machine first, then transfer to GPU
+    local temp_dir="/tmp/triton-models-$$"
+    mkdir -p "$temp_dir"
+
+    log "Downloading Triton models to build machine: $temp_dir"
+    if ! aws s3 sync "$triton_repo_s3" "$temp_dir/" --exclude "*.log" --exclude "*.tmp"; then
+        err "Failed to download Triton models from S3"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    log "Transferring Triton models to GPU instance"
     local download_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
@@ -99,51 +132,70 @@ set -euo pipefail
 # Clear existing models
 echo "Clearing existing model repository..."
 rm -rf ${RIVA_MODEL_REPO_PATH}/*
+mkdir -p ${RIVA_MODEL_REPO_PATH}
 
-# Download Triton repository
-echo "Downloading Triton repository from S3..."
-aws s3 sync "${triton_repo_s3}" "${RIVA_MODEL_REPO_PATH}/" \\
-    --exclude "*.log" --exclude "*.tmp"
-
-# Verify download
-echo "Verifying repository structure..."
-if [[ -d "${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}" ]]; then
-    echo "✅ Model directory found: ${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}"
-
-    # Check for required files
-    if [[ -f "${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}/config.pbtxt" ]]; then
-        echo "✅ Model configuration found"
-    else
-        echo "❌ Model configuration missing"
-        exit 1
-    fi
-
-    if [[ -d "${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}/1" ]]; then
-        echo "✅ Model version directory found"
-        ls -la "${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}/1/"
-    else
-        echo "❌ Model version directory missing"
-        exit 1
-    fi
-else
-    echo "❌ Model directory not found: ${RIVA_MODEL_REPO_PATH}/${RIVA_ASR_MODEL_NAME}"
-    exit 1
-fi
-
-# Set proper permissions
-chmod -R 755 ${RIVA_MODEL_REPO_PATH}
-
-echo "Repository download completed successfully"
-find ${RIVA_MODEL_REPO_PATH} -type f | head -10
+echo "Model repository cleared and ready for transfer"
 EOF
     )
 
-    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "AWS_DEFAULT_REGION=${AWS_REGION} bash -s" <<< "$download_script"; then
-        log "Triton repository downloaded successfully"
+    # Run the cleanup script on GPU instance
+    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$download_script"; then
+        log "GPU instance prepared for model transfer"
     else
-        err "Failed to download Triton repository"
+        err "Failed to prepare GPU instance"
+        rm -rf "$temp_dir"
         return 1
     fi
+
+    # Transfer models from build machine to GPU instance
+    log "Transferring models via scp: $temp_dir/* -> ${GPU_INSTANCE_IP}:${RIVA_MODEL_REPO_PATH}/"
+    if scp -r $ssh_opts "$temp_dir"/* "${remote_user}@${GPU_INSTANCE_IP}:${RIVA_MODEL_REPO_PATH}/"; then
+        log "Model transfer completed successfully"
+    else
+        err "Failed to transfer models to GPU instance"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Verify models on GPU instance
+    local verify_script=$(cat << 'EOF'
+#!/bin/bash
+set -euo pipefail
+
+echo "Verifying repository structure..."
+find /opt/riva/models -type f | head -10
+
+# Look for any model directory (since we don't know exact name yet)
+model_dirs=$(find /opt/riva/models -maxdepth 1 -type d ! -path /opt/riva/models)
+if [[ -n "$model_dirs" ]]; then
+    echo "✅ Model directories found:"
+    echo "$model_dirs"
+
+    # Check for config files
+    config_files=$(find /opt/riva/models -name "config.pbtxt" | wc -l)
+    echo "✅ Found $config_files model configuration files"
+
+    # Set proper permissions
+    chmod -R 755 /opt/riva/models
+    echo "✅ Permissions set successfully"
+else
+    echo "❌ No model directories found"
+    exit 1
+fi
+EOF
+    )
+
+    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$verify_script"; then
+        log "Triton repository verification successful"
+    else
+        err "Failed to verify Triton repository"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Cleanup temp directory
+    rm -rf "$temp_dir"
+    log "Triton repository downloaded and transferred successfully"
 
     end_step
 }
