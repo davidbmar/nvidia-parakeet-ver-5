@@ -212,6 +212,81 @@ start_riva_server() {
 
     log "Starting RIVA server with image: $riva_image"
 
+    # Preflight validation (ChatGPT recommendation)
+    log "🔍 Running preflight validation on model repository..."
+    local preflight_script=$(cat << 'PREFLIGHT_EOF'
+#!/bin/bash
+set -euo pipefail
+
+echo "🔍 Validating model repository structure before starting RIVA..."
+
+# Check if model repository exists
+if [[ ! -d "${RIVA_MODEL_REPO_PATH}" ]]; then
+    echo "❌ Model repository directory not found: ${RIVA_MODEL_REPO_PATH}"
+    exit 1
+fi
+
+cd "${RIVA_MODEL_REPO_PATH}"
+
+# Find all model directories
+model_dirs=$(find . -maxdepth 1 -type d ! -path . | wc -l)
+if [[ $model_dirs -eq 0 ]]; then
+    echo "❌ No model directories found in ${RIVA_MODEL_REPO_PATH}"
+    exit 1
+fi
+
+echo "Found $model_dirs model directories"
+
+# Validate each model directory
+validation_failed=0
+for model_dir in */; do
+    model_dir=${model_dir%/}  # Remove trailing slash
+    config_file="$model_dir/config.pbtxt"
+
+    echo "Checking model: $model_dir"
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "❌ Missing config.pbtxt in $model_dir"
+        validation_failed=1
+        continue
+    fi
+
+    # Extract model name from config
+    config_name=$(grep '^name:' "$config_file" | sed 's/name: *"\(.*\)"/\1/' | head -1)
+
+    if [[ "$model_dir" != "$config_name" ]]; then
+        echo "❌ Directory name '$model_dir' != config name '$config_name'"
+        validation_failed=1
+        continue
+    fi
+
+    # Check for model files
+    model_files=$(find "$model_dir" -name "*.riva" -o -name "model.*" | wc -l)
+    if [[ $model_files -eq 0 ]]; then
+        echo "❌ No model files found in $model_dir"
+        validation_failed=1
+        continue
+    fi
+
+    echo "✅ $model_dir: validation passed"
+done
+
+if [[ $validation_failed -eq 1 ]]; then
+    echo "❌ Model repository validation failed. Fix naming/structure issues before deploying."
+    exit 1
+fi
+
+echo "✅ Model repository validation passed - ready for deployment"
+PREFLIGHT_EOF
+    )
+
+    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "RIVA_MODEL_REPO_PATH='${RIVA_MODEL_REPO_PATH}' bash -s" <<< "$preflight_script"; then
+        log "✅ Preflight validation passed"
+    else
+        err "❌ Preflight validation failed - cannot start RIVA server"
+        return 1
+    fi
+
     local start_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
@@ -231,11 +306,12 @@ if [[ "${ENABLE_METRICS}" == "true" ]]; then
     DOCKER_CMD="\$DOCKER_CMD -p ${METRICS_PORT}:8002"
 fi
 
-# Add volume mounts
+# Add volume mounts and explicit tritonserver command (ChatGPT Path C)
 DOCKER_CMD="\$DOCKER_CMD \\
     -v ${RIVA_MODEL_REPO_PATH}:/data/models:ro \\
     -v /tmp/riva-logs:/opt/riva/logs \\
-    ${riva_image}"
+    ${riva_image} \\
+    tritonserver --model-repository=/data/models --allow-grpc=true --allow-http=true --http-port=8000 --grpc-port=50051 --metrics-port=8002 --log-verbose=1"
 
 echo "Running: \$DOCKER_CMD"
 
