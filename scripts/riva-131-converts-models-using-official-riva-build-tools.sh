@@ -596,8 +596,12 @@ if [[ -f "build.log" ]]; then
 fi
 
 cd output_ready
-find . -type f -exec sha256sum {} \; > transfer_checksums.txt
-echo "✅ Files prepared for transfer"
+# Generate checksums for all files EXCEPT the checksum file itself and build.log
+# This prevents the self-referential checksum issue
+find . -type f \( ! -name 'transfer_checksums.txt' ! -name 'build.log' \) -print0 | \
+    sort -z | \
+    xargs -0 sha256sum > transfer_checksums.txt
+echo "✅ Files prepared for transfer (excluding transfer_checksums.txt and build.log from checksums)"
 EOF
     )
 
@@ -659,9 +663,9 @@ EOF
             fi
         fi
 
-        # Validate other important files
+        # Validate other important files (excluding build.log which is not in checksums)
         local validation_warnings=0
-        for file in config.pbtxt build.log; do
+        for file in config.pbtxt; do
             if [[ -f "$file" ]]; then
                 local file_size
                 file_size=$(stat -c%s "$file" 2>/dev/null || echo "0")
@@ -671,6 +675,15 @@ EOF
                 fi
             fi
         done
+
+        # Just verify build.log exists and has reasonable size if present
+        if [[ -f "build.log" ]]; then
+            local build_log_size
+            build_log_size=$(stat -c%s "build.log" 2>/dev/null || echo "0")
+            if [[ $build_log_size -gt 0 ]]; then
+                log "✅ build.log transferred successfully (${build_log_size} bytes)"
+            fi
+        fi
 
         # Final decision based on validation results
         if [[ $validation_result == 0 ]]; then
