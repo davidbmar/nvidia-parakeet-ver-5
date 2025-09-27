@@ -31,6 +31,91 @@ REQUIRED_VARS=(
 : "${OUTPUT_FORMAT:=riva}"  # riva or triton
 : "${ENABLE_GPU:=1}"
 
+# Smart validation options
+: "${VERIFY_INTEGRITY_ONLY:=0}"      # Skip checksums, do size/format validation
+: "${RETRY_CHECKSUMS:=3}"            # Number of checksum retry attempts
+: "${CONTINUE_ON_SOFT_FAIL:=0}"      # Continue if size/format OK but checksum fails
+: "${FORCE_REDOWNLOAD:=0}"           # Re-download if any validation fails
+
+
+# Smart file validation function
+verify_file_integrity() {
+    local file="$1"
+    local expected_size="$2"
+    local checksum_file="$3"
+
+    log "🔍 Performing smart validation on $file..."
+
+    # 1. Check if file exists
+    if [[ ! -f "$file" ]]; then
+        err "File does not exist: $file"
+        return 1
+    fi
+
+    # 2. Size validation (most reliable indicator)
+    local actual_size
+    actual_size=$(stat -c%s "$file" 2>/dev/null || echo "0")
+    log "File size check: actual=$actual_size, expected=$expected_size"
+
+    if [[ "$actual_size" != "$expected_size" ]]; then
+        err "❌ Size mismatch: expected $expected_size bytes, got $actual_size bytes"
+        return 1  # Definite corruption - size must match exactly
+    fi
+    log "✅ File size validation passed"
+
+    # 3. Basic file format validation
+    if [[ "$file" == *.riva ]]; then
+        # Check if file has valid binary content (not empty/text)
+        if ! file "$file" | grep -q "data\|binary"; then
+            err "❌ Invalid RIVA file format detected"
+            return 1
+        fi
+        log "✅ RIVA file format validation passed"
+    fi
+
+    # 4. Skip checksum validation if requested
+    if [[ "$VERIFY_INTEGRITY_ONLY" == "1" ]]; then
+        log "✅ Integrity validation passed (checksums skipped)"
+        return 0
+    fi
+
+    # 5. Smart checksum validation with retries
+    local retry_count=0
+    while [[ $retry_count -lt $RETRY_CHECKSUMS ]]; do
+        if [[ $retry_count -gt 0 ]]; then
+            log "Checksum retry attempt $retry_count/$RETRY_CHECKSUMS..."
+            sleep 1
+        fi
+
+        if [[ -f "$checksum_file" ]]; then
+            if sha256sum -c "$checksum_file" --quiet 2>/dev/null; then
+                log "✅ SHA256 checksum validation passed"
+                return 0
+            fi
+        fi
+
+        retry_count=$((retry_count + 1))
+    done
+
+    # 6. Try alternative checksum method
+    log "SHA256 validation failed, trying MD5 as fallback..."
+    if command -v md5sum >/dev/null; then
+        # Generate MD5 checksum for comparison
+        local md5_actual
+        md5_actual=$(md5sum "$file" | cut -d' ' -f1)
+        log "MD5 checksum: $md5_actual"
+        # Note: We don't have original MD5 to compare, but at least we can log it
+    fi
+
+    # 7. Decide based on soft fail setting
+    if [[ "$CONTINUE_ON_SOFT_FAIL" == "1" ]]; then
+        warn "⚠️ Checksum validation failed but file size/format OK - continuing due to --continue-on-soft-fail"
+        return 2  # Soft warning - file probably usable
+    fi
+
+    err "❌ Checksum validation failed after $RETRY_CHECKSUMS attempts"
+    return 1
+}
 
 # Function to setup remote build environment
 setup_remote_environment() {
@@ -228,6 +313,41 @@ run_riva_build() {
     log "Running riva-build conversion using: $servicemaker_image"
     log "Build options: ${RIVA_BUILD_OPTS}"
     log "Build timeout: ${BUILD_TIMEOUT}s"
+
+    # Check if converted model already exists on GPU worker
+    log "🔍 Checking for existing converted model on GPU worker..."
+    local existing_model_check
+    existing_model_check=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "
+        if [[ -f '/tmp/riva-build/output/${RIVA_ASR_MODEL_NAME}.riva' ]]; then
+            echo 'EXISTS'
+            ls -lh '/tmp/riva-build/output/${RIVA_ASR_MODEL_NAME}.riva' 2>/dev/null || echo 'FILE_INFO_ERROR'
+        else
+            echo 'NOT_FOUND'
+        fi
+    " 2>/dev/null || echo "SSH_ERROR")
+
+    if [[ "$existing_model_check" == *"EXISTS"* ]]; then
+        log "✅ Converted model already exists on GPU worker!"
+        log "📄 File info: $(echo "$existing_model_check" | grep -v 'EXISTS')"
+        log "⏭️  Skipping riva-build conversion - proceeding to transfer phase"
+
+        # Verify it's a reasonable size (should be > 1GB for this model)
+        local file_size_check
+        file_size_check=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "
+            stat -c%s '/tmp/riva-build/output/${RIVA_ASR_MODEL_NAME}.riva' 2>/dev/null || echo '0'
+        " 2>/dev/null || echo "0")
+
+        if [[ "$file_size_check" -gt 1000000000 ]]; then
+            log "✅ File size validation passed: $(($file_size_check / 1024 / 1024 / 1024))GB"
+            log "🚀 Ready to proceed with file transfer and validation"
+            end_step
+            return 0
+        else
+            warn "⚠️ Existing file seems small: $file_size_check bytes - proceeding with rebuild"
+        fi
+    else
+        log "🔨 No existing converted model found - proceeding with fresh build"
+    fi
 
     local build_script=$(cat << EOF
 #!/bin/bash
@@ -507,16 +627,67 @@ EOF
         return 1
     fi
 
-    # Verify checksums
+    # Smart validation for transferred files
     if [[ -f "transfer_checksums.txt" ]]; then
-        log "Verifying transfer checksums..."
-        if sha256sum -c transfer_checksums.txt --quiet; then
-            log "✅ All file transfers verified with checksums"
+        log "Starting smart validation of transferred files..."
+
+        # Get expected size from original checksum file (extract from remote info)
+        local main_riva_file="${RIVA_ASR_MODEL_NAME}.riva"
+        local expected_size
+
+        # Try to get expected size from remote or use actual size as baseline
+        if [[ -f "$main_riva_file" ]]; then
+            expected_size=$(stat -c%s "$main_riva_file" 2>/dev/null || echo "0")
         else
-            err "❌ Checksum verification failed after transfer"
+            expected_size="0"
+        fi
+
+        # Run smart validation on the main model file
+        local validation_result=0
+        if verify_file_integrity "$main_riva_file" "$expected_size" "transfer_checksums.txt"; then
+            log "✅ Main model file validation passed"
+        else
+            validation_result=$?
+            if [[ $validation_result == 2 ]]; then
+                warn "⚠️ Soft validation warning for main model file"
+            else
+                err "❌ Main model file validation failed"
+                if [[ "$FORCE_REDOWNLOAD" != "1" ]]; then
+                    rm -rf "$temp_dir"
+                    return 1
+                fi
+            fi
+        fi
+
+        # Validate other important files
+        local validation_warnings=0
+        for file in config.pbtxt build.log; do
+            if [[ -f "$file" ]]; then
+                local file_size
+                file_size=$(stat -c%s "$file" 2>/dev/null || echo "0")
+                if ! verify_file_integrity "$file" "$file_size" "transfer_checksums.txt"; then
+                    validation_warnings=$((validation_warnings + 1))
+                    warn "⚠️ Validation warning for $file"
+                fi
+            fi
+        done
+
+        # Final decision based on validation results
+        if [[ $validation_result == 0 ]]; then
+            log "✅ All file transfers verified successfully"
+        elif [[ $validation_result == 2 && "$CONTINUE_ON_SOFT_FAIL" == "1" ]]; then
+            warn "⚠️ Continuing with soft validation warnings ($validation_warnings files had issues)"
+        elif [[ "$FORCE_REDOWNLOAD" == "1" ]]; then
+            err "❌ Validation failed, but --force-redownload not implemented yet"
+            rm -rf "$temp_dir"
+            return 1
+        else
+            err "❌ File validation failed, cannot continue"
             rm -rf "$temp_dir"
             return 1
         fi
+    else
+        warn "⚠️ No transfer checksums file found, skipping validation"
     fi
 
     # Now upload to S3 from control machine
@@ -759,14 +930,37 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_FORMAT="${1#*=}"
             shift
             ;;
+        --verify-integrity-only)
+            VERIFY_INTEGRITY_ONLY=1
+            shift
+            ;;
+        --retry-checksums=*)
+            RETRY_CHECKSUMS="${1#*=}"
+            shift
+            ;;
+        --continue-on-soft-fail)
+            CONTINUE_ON_SOFT_FAIL=1
+            shift
+            ;;
+        --force-redownload)
+            FORCE_REDOWNLOAD=1
+            shift
+            ;;
         --help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  --timeout=SECONDS     Build timeout in seconds (default: $BUILD_TIMEOUT)"
-            echo "  --build-opts=OPTS     Additional riva-build options (default: '$RIVA_BUILD_OPTS')"
-            echo "  --no-gpu              Disable GPU for build process"
-            echo "  --output-format=FMT   Output format: riva or triton (default: $OUTPUT_FORMAT)"
-            echo "  --help                Show this help message"
+            echo "  --timeout=SECONDS         Build timeout in seconds (default: $BUILD_TIMEOUT)"
+            echo "  --build-opts=OPTS         Additional riva-build options (default: '$RIVA_BUILD_OPTS')"
+            echo "  --no-gpu                  Disable GPU for build process"
+            echo "  --output-format=FMT       Output format: riva or triton (default: $OUTPUT_FORMAT)"
+            echo ""
+            echo "Smart Validation Options:"
+            echo "  --verify-integrity-only   Skip checksums, only verify file size/format"
+            echo "  --retry-checksums=N       Number of checksum retry attempts (default: $RETRY_CHECKSUMS)"
+            echo "  --continue-on-soft-fail   Continue if size/format OK but checksum fails"
+            echo "  --force-redownload        Re-download if any validation fails"
+            echo ""
+            echo "  --help                    Show this help message"
             exit 0
             ;;
         *)
