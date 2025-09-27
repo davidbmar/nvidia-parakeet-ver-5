@@ -382,12 +382,12 @@ run_health_checks() {
         return 1
     fi
 
-    # 1. SSH Connectivity
-    echo -n "  • SSH Connectivity: "
-    if validate_ssh_connectivity "$instance_ip" "$ssh_key"; then
+    # 1. SSH Connectivity with exponential backoff
+    echo "  • SSH Connectivity:"
+    if wait_for_ssh_with_backoff "$instance_ip" "$ssh_key"; then
         print_status "ok" "Connected"
     else
-        print_status "error" "Failed"
+        print_status "error" "Failed after multiple retries"
         all_passed=false
 
         # Try to diagnose

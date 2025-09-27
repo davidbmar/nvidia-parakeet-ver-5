@@ -223,7 +223,7 @@ run_riva_build() {
     local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
     local remote_user="ubuntu"
 
-    local servicemaker_image="nvcr.io/nvidia/riva/riva-speech:${RIVA_SERVICEMAKER_VERSION}-servicemaker"
+    local servicemaker_image="nvcr.io/nvidia/riva/riva-speech:${RIVA_SERVICEMAKER_VERSION}"
 
     log "Running riva-build conversion using: $servicemaker_image"
     log "Build options: ${RIVA_BUILD_OPTS}"

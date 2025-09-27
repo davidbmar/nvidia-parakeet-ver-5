@@ -484,6 +484,62 @@ wait_for_cloud_init() {
     return 1
 }
 
+# Wait for SSH with exponential backoff
+wait_for_ssh_with_backoff() {
+    local instance_ip="${1}"
+    local ssh_key="${2:-$HOME/.ssh/${SSH_KEY_NAME}.pem}"
+    local max_retries="${3:-10}"
+    local initial_wait="${4:-2}"
+
+    local wait_time=$initial_wait
+    local max_wait=30
+    local total_wait=0
+    local attempt=1
+    local start_time=$(date +%s)
+
+    json_log "${SCRIPT_NAME:-common}" "ssh_wait" "info" "Waiting for SSH to become available" \
+        "ip=$instance_ip" "max_retries=$max_retries"
+
+    echo "    ⏳ Waiting for SSH to become available (this is normal after instance start)..."
+
+    while [ $attempt -le $max_retries ]; do
+        # Try SSH connection
+        if ssh -i "$ssh_key" -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
+            ubuntu@"$instance_ip" 'echo "SSH OK"' &>/dev/null; then
+
+            local end_time=$(date +%s)
+            local elapsed=$((end_time - start_time))
+
+            json_log "${SCRIPT_NAME:-common}" "ssh_wait" "ok" "SSH available after ${elapsed}s" \
+                "attempts=$attempt" "total_wait=$total_wait"
+            echo "    ✅ SSH became available after ${elapsed}s (attempt $attempt)"
+            return 0
+        fi
+
+        # If this isn't the last attempt, wait before retry
+        if [ $attempt -lt $max_retries ]; then
+            echo "    Attempt $attempt/$max_retries: SSH not ready, waiting ${wait_time}s before retry..."
+            sleep $wait_time
+            total_wait=$((total_wait + wait_time))
+
+            # Exponential backoff with cap
+            wait_time=$((wait_time * 2))
+            if [ $wait_time -gt $max_wait ]; then
+                wait_time=$max_wait
+            fi
+        else
+            echo "    Attempt $attempt/$max_retries: SSH not ready"
+        fi
+
+        attempt=$((attempt + 1))
+    done
+
+    json_log "${SCRIPT_NAME:-common}" "ssh_wait" "error" "SSH timeout after $max_retries attempts" \
+        "total_wait=$total_wait"
+    echo "    ❌ SSH did not become available after $max_retries attempts (${total_wait}s total wait)"
+    return 1
+}
+
 # Validate SSH connectivity
 validate_ssh_connectivity() {
     local instance_ip="${1}"

@@ -38,7 +38,7 @@ create_bintarball_reference_staging() {
 
     # Use existing bintarball structure instead of duplicating
     local bintarball_model_uri="s3://${NVIDIA_DRIVERS_S3_BUCKET}/bintarball/riva-models/parakeet/parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz"
-    local bintarball_container_uri="s3://${NVIDIA_DRIVERS_S3_BUCKET}/bintarball/riva-containers/riva-speech-2.15.0.tar.gz"
+    local bintarball_container_uri="${RIVA_SERVER_PATH:-s3://${NVIDIA_DRIVERS_S3_BUCKET}/bintarball/riva-containers/riva-speech-2.15.0.tar.gz}"
 
     log "🔗 Using existing bintarball structure (no duplication)"
     log "  Model: $bintarball_model_uri"
