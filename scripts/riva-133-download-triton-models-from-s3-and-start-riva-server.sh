@@ -314,8 +314,10 @@ if [[ "${ENABLE_METRICS}" == "true" ]]; then
 fi
 
 # Add volume mounts and start-riva command (Riva mode with custom backends)
+# Dual-mount solution: satisfy both start-riva (/data) and hardcoded model paths (/opt/riva/models)
 DOCKER_CMD="\$DOCKER_CMD \\
     -v /opt/riva:/data \\
+    -v /opt/riva/models:/opt/riva/models \\
     -v /tmp/riva-logs:/opt/riva/logs \\
     ${riva_image} \\
     start-riva \\

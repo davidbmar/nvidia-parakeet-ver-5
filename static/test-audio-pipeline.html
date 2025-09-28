@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Pipeline Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        .metrics { background-color: #f8f9fa; padding: 15px; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+        #audioLevel { width: 100%; height: 20px; background: #eee; border-radius: 10px; overflow: hidden; }
+        #audioLevelBar { height: 100%; background: linear-gradient(to right, #28a745, #ffc107, #dc3545); width: 0%; transition: width 0.1s; }
+    </style>
+</head>
+<body>
+    <h1>Audio Pipeline Test</h1>
+
+    <div id="status" class="status info">Initializing...</div>
+
+    <div>
+        <button id="startTest" onclick="startTest()">Start Audio Test</button>
+        <button id="stopTest" onclick="stopTest()" disabled>Stop Test</button>
+    </div>
+
+    <div id="audioLevel">
+        <div id="audioLevelBar"></div>
+    </div>
+
+    <div id="metrics" class="metrics">
+        <h3>Audio Metrics</h3>
+        <div id="metricsContent">No data yet</div>
+    </div>
+
+    <div id="logs" style="max-height: 300px; overflow-y: auto; background: #f8f9fa; padding: 10px; border-radius: 5px; margin-top: 20px;">
+        <h3>Test Logs</h3>
+        <div id="logContent"></div>
+    </div>
+
+    <script>
+        let audioContext = null;
+        let workletNode = null;
+        let mediaStream = null;
+        let sourceNode = null;
+        let testActive = false;
+        let frameCount = 0;
+        let droppedFrames = 0;
+        let testStartTime = null;
+
+        const TARGET_SAMPLE_RATE = 16000;
+        const FRAME_MS = 20;
+        const TEST_DURATION_MS = 60000; // 60 seconds
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString().substr(11, 12);
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEntry.style.color = type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#333';
+            document.getElementById('logContent').appendChild(logEntry);
+            document.getElementById('logs').scrollTop = document.getElementById('logs').scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function updateMetrics() {
+            const elapsed = testActive ? Date.now() - testStartTime : 0;
+            const expectedFrames = Math.floor(elapsed / FRAME_MS);
+            const dropRate = frameCount > 0 ? (droppedFrames / frameCount * 100).toFixed(2) : 0;
+
+            document.getElementById('metricsContent').innerHTML = `
+                <div>Test Duration: ${(elapsed / 1000).toFixed(1)}s / 60.0s</div>
+                <div>Frames Processed: ${frameCount}</div>
+                <div>Expected Frames: ${expectedFrames}</div>
+                <div>Dropped Frames: ${droppedFrames}</div>
+                <div>Drop Rate: ${dropRate}%</div>
+                <div>Sample Rate: ${TARGET_SAMPLE_RATE}Hz</div>
+                <div>Frame Size: ${FRAME_MS}ms</div>
+            `;
+        }
+
+        async function startTest() {
+            try {
+                updateStatus('Starting audio test...', 'info');
+                log('Starting audio pipeline test');
+
+                // Reset metrics
+                frameCount = 0;
+                droppedFrames = 0;
+                testStartTime = Date.now();
+                testActive = true;
+
+                // Get microphone access
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: { ideal: 48000 },
+                        channelCount: { ideal: 1 },
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                log('Microphone access granted');
+
+                // Create audio context
+                audioContext = new AudioContext();
+
+                // Load AudioWorklet
+                await audioContext.audioWorklet.addModule('/static/audio-worklet-processor.js');
+                log('AudioWorklet module loaded');
+
+                // Create worklet node
+                workletNode = new AudioWorkletNode(audioContext, 'riva-audio-processor', {
+                    processorOptions: {
+                        targetSampleRate: TARGET_SAMPLE_RATE,
+                        frameMs: FRAME_MS,
+                        channels: 1
+                    }
+                });
+
+                // Handle worklet messages
+                workletNode.port.onmessage = (event) => {
+                    const { type, data } = event.data;
+
+                    if (type === 'processor_ready') {
+                        log('AudioWorklet processor ready');
+                    } else if (type === 'audio_frame') {
+                        frameCount++;
+
+                        // Validate frame
+                        if (data.sampleRate !== TARGET_SAMPLE_RATE) {
+                            droppedFrames++;
+                            log(`Frame validation failed: sample rate ${data.sampleRate} != ${TARGET_SAMPLE_RATE}`, 'error');
+                        }
+
+                        if (data.frameMs !== FRAME_MS) {
+                            droppedFrames++;
+                            log(`Frame validation failed: frame size ${data.frameMs}ms != ${FRAME_MS}ms`, 'error');
+                        }
+
+                        // Update audio level visualization
+                        if (data.audioLevel !== undefined) {
+                            const levelPercent = Math.min(100, data.audioLevel * 100);
+                            document.getElementById('audioLevelBar').style.width = `${levelPercent}%`;
+                        }
+
+                        // Log every 100 frames
+                        if (frameCount % 100 === 0) {
+                            log(`Processed ${frameCount} frames`);
+                        }
+                    } else if (type === 'stats') {
+                        log(`Stats: ${JSON.stringify(data)}`);
+                    }
+
+                    updateMetrics();
+                };
+
+                // Connect audio nodes
+                sourceNode = audioContext.createMediaStreamSource(mediaStream);
+                sourceNode.connect(workletNode);
+
+                log('Audio pipeline connected');
+                updateStatus('Audio test running - speak into microphone', 'success');
+
+                // Enable/disable buttons
+                document.getElementById('startTest').disabled = true;
+                document.getElementById('stopTest').disabled = false;
+
+                // Auto-stop after test duration
+                setTimeout(() => {
+                    if (testActive) {
+                        stopTest();
+                        evaluateTestResults();
+                    }
+                }, TEST_DURATION_MS);
+
+            } catch (error) {
+                log(`Error starting test: ${error.message}`, 'error');
+                updateStatus(`Error: ${error.message}`, 'error');
+                stopTest();
+            }
+        }
+
+        function stopTest() {
+            testActive = false;
+
+            try {
+                if (workletNode) {
+                    workletNode.disconnect();
+                    workletNode = null;
+                }
+
+                if (sourceNode) {
+                    sourceNode.disconnect();
+                    sourceNode = null;
+                }
+
+                if (audioContext) {
+                    audioContext.close();
+                    audioContext = null;
+                }
+
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    mediaStream = null;
+                }
+
+                log('Audio test stopped');
+                updateStatus('Audio test stopped', 'info');
+
+                // Enable/disable buttons
+                document.getElementById('startTest').disabled = false;
+                document.getElementById('stopTest').disabled = true;
+
+                updateMetrics();
+
+            } catch (error) {
+                log(`Error stopping test: ${error.message}`, 'error');
+            }
+        }
+
+        function evaluateTestResults() {
+            log('=== TEST RESULTS ===');
+
+            const dropRate = frameCount > 0 ? (droppedFrames / frameCount * 100) : 0;
+            const testDuration = Date.now() - testStartTime;
+
+            log(`Test Duration: ${(testDuration / 1000).toFixed(1)}s`);
+            log(`Total Frames: ${frameCount}`);
+            log(`Dropped Frames: ${droppedFrames}`);
+            log(`Drop Rate: ${dropRate.toFixed(2)}%`);
+
+            if (droppedFrames === 0 && frameCount > 0) {
+                log('✅ TEST PASSED: No frame drops detected', 'success');
+                updateStatus('✅ Audio pipeline test PASSED', 'success');
+            } else if (dropRate < 1.0) {
+                log('⚠️  TEST MARGINAL: Low drop rate acceptable', 'info');
+                updateStatus('⚠️ Audio pipeline test MARGINAL', 'info');
+            } else {
+                log('❌ TEST FAILED: High frame drop rate', 'error');
+                updateStatus('❌ Audio pipeline test FAILED', 'error');
+            }
+        }
+
+        // Initialize
+        updateStatus('Ready to test audio pipeline', 'info');
+        updateMetrics();
+    </script>
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Diagnostic Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            border-left: 4px solid;
+        }
+        .success {
+            background-color: #d4edda;
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .log-container {
+            max-height: 400px;
+            overflow-y: auto;
+            background-color: #2d3748;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+        .timestamp {
+            color: #90cdf4;
+        }
+        .config-panel {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: 400px;
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+        label {
+            display: inline-block;
+            width: 150px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 WebSocket Diagnostic Tool</h1>
+
+        <div class="config-panel">
+            <h3>Configuration</h3>
+            <div style="margin-bottom: 10px;">
+                <label for="wsUrl">WebSocket URL:</label>
+                <input type="text" id="wsUrl" value="wss://3.16.124.227:8443/">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label for="httpsUrl">HTTPS Test URL:</label>
+                <input type="text" id="httpsUrl" value="https://3.16.124.227:8443/">
+            </div>
+        </div>
+
+        <div>
+            <button id="runAllTests">🚀 Run All Tests</button>
+            <button id="testHttps">🔒 Test HTTPS</button>
+            <button id="testWebSocket">🔌 Test WebSocket</button>
+            <button id="testDetailed">🔍 Detailed Test</button>
+            <button id="clearLogs">🗑️ Clear Logs</button>
+        </div>
+
+        <div id="results"></div>
+
+        <div class="log-container" id="logContainer">
+            <div id="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        class WebSocketDiagnostic {
+            constructor() {
+                this.logs = document.getElementById('logs');
+                this.results = document.getElementById('results');
+                this.setupEventListeners();
+                this.log('🔧 WebSocket Diagnostic Tool initialized');
+            }
+
+            setupEventListeners() {
+                document.getElementById('runAllTests').addEventListener('click', () => this.runAllTests());
+                document.getElementById('testHttps').addEventListener('click', () => this.testHTTPS());
+                document.getElementById('testWebSocket').addEventListener('click', () => this.testBasicWebSocket());
+                document.getElementById('testDetailed').addEventListener('click', () => this.testDetailedWebSocket());
+                document.getElementById('clearLogs').addEventListener('click', () => this.clearLogs());
+            }
+
+            async runAllTests() {
+                this.clearResults();
+                this.log('🏁 Starting comprehensive diagnostic tests...');
+
+                await this.testBrowserSupport();
+                await this.testHTTPS();
+                await this.testBasicWebSocket();
+                await this.testDetailedWebSocket();
+
+                this.log('✅ All tests completed');
+            }
+
+            async testBrowserSupport() {
+                this.log('🌐 Testing browser support...');
+
+                const results = [];
+
+                // Check WebSocket support
+                if (typeof WebSocket !== 'undefined') {
+                    results.push({ type: 'success', message: '✅ WebSocket API supported' });
+                } else {
+                    results.push({ type: 'error', message: '❌ WebSocket API not supported' });
+                }
+
+                // Check secure contexts
+                if (window.isSecureContext) {
+                    results.push({ type: 'success', message: '✅ Secure context (HTTPS/localhost)' });
+                } else {
+                    results.push({ type: 'warning', message: '⚠️ Not in secure context - may affect WebSocket over TLS' });
+                }
+
+                // Check AudioWorklet support
+                if (window.AudioContext && AudioContext.prototype.audioWorklet) {
+                    results.push({ type: 'success', message: '✅ AudioWorklet supported' });
+                } else {
+                    results.push({ type: 'warning', message: '⚠️ AudioWorklet not supported' });
+                }
+
+                // Check MediaDevices
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    results.push({ type: 'success', message: '✅ getUserMedia supported' });
+                } else {
+                    results.push({ type: 'error', message: '❌ getUserMedia not supported' });
+                }
+
+                this.displayResults('Browser Support', results);
+            }
+
+            async testHTTPS() {
+                this.log('🔒 Testing HTTPS connectivity...');
+                const httpsUrl = document.getElementById('httpsUrl').value;
+
+                const results = [];
+
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+                    const response = await fetch(httpsUrl, {
+                        method: 'HEAD',
+                        signal: controller.signal,
+                        mode: 'no-cors' // Allow cross-origin requests
+                    });
+
+                    clearTimeout(timeoutId);
+                    results.push({ type: 'success', message: `✅ HTTPS connection successful` });
+                    this.log(`HTTPS response status: ${response.status || 'unknown (no-cors)'}`);
+
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        results.push({ type: 'error', message: '❌ HTTPS connection timeout (10s)' });
+                        this.log('HTTPS connection timed out after 10 seconds');
+                    } else {
+                        results.push({ type: 'error', message: `❌ HTTPS connection failed: ${error.message}` });
+                        this.log(`HTTPS error: ${error.message}`);
+                    }
+                }
+
+                this.displayResults('HTTPS Connectivity', results);
+            }
+
+            async testBasicWebSocket() {
+                this.log('🔌 Testing basic WebSocket connection...');
+                const wsUrl = document.getElementById('wsUrl').value;
+
+                return new Promise((resolve) => {
+                    const results = [];
+                    let ws;
+                    let connected = false;
+
+                    const timeout = setTimeout(() => {
+                        if (!connected) {
+                            results.push({ type: 'error', message: '❌ WebSocket connection timeout (10s)' });
+                            this.log('WebSocket connection timed out after 10 seconds');
+                            if (ws) ws.close();
+                            this.displayResults('Basic WebSocket Test', results);
+                            resolve();
+                        }
+                    }, 10000);
+
+                    try {
+                        this.log(`Attempting WebSocket connection to: ${wsUrl}`);
+                        ws = new WebSocket(wsUrl);
+
+                        ws.onopen = (event) => {
+                            connected = true;
+                            clearTimeout(timeout);
+                            results.push({ type: 'success', message: '✅ WebSocket connection established' });
+                            this.log('WebSocket connection opened successfully');
+
+                            // Close gracefully
+                            setTimeout(() => {
+                                ws.close(1000, 'Test complete');
+                            }, 1000);
+                        };
+
+                        ws.onmessage = (event) => {
+                            this.log(`WebSocket message received: ${event.data.substring(0, 200)}...`);
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (data.type === 'connection') {
+                                    results.push({ type: 'success', message: `✅ Server handshake successful (ID: ${data.connection_id})` });
+                                }
+                            } catch (e) {
+                                this.log('Non-JSON message received (binary data?)');
+                            }
+                        };
+
+                        ws.onclose = (event) => {
+                            clearTimeout(timeout);
+                            if (connected) {
+                                results.push({ type: 'success', message: `✅ WebSocket closed gracefully (code: ${event.code})` });
+                                this.log(`WebSocket closed: code=${event.code}, reason="${event.reason}"`);
+                            } else {
+                                results.push({ type: 'error', message: `❌ WebSocket closed without connecting (code: ${event.code})` });
+                                this.log(`WebSocket failed to connect: code=${event.code}, reason="${event.reason}"`);
+                            }
+                            this.displayResults('Basic WebSocket Test', results);
+                            resolve();
+                        };
+
+                        ws.onerror = (error) => {
+                            clearTimeout(timeout);
+                            results.push({ type: 'error', message: `❌ WebSocket error: ${error.message || 'Unknown error'}` });
+                            this.log(`WebSocket error: ${error.message || error.type || 'Unknown error'}`);
+                            this.log(`Error object: ${JSON.stringify(error, null, 2)}`);
+                        };
+
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        results.push({ type: 'error', message: `❌ Failed to create WebSocket: ${error.message}` });
+                        this.log(`WebSocket creation error: ${error.message}`);
+                        this.displayResults('Basic WebSocket Test', results);
+                        resolve();
+                    }
+                });
+            }
+
+            async testDetailedWebSocket() {
+                this.log('🔍 Testing detailed WebSocket functionality...');
+                const wsUrl = document.getElementById('wsUrl').value;
+
+                return new Promise((resolve) => {
+                    const results = [];
+                    let ws;
+                    let phase = 'connecting';
+
+                    const phases = {
+                        connecting: 'Initial connection',
+                        handshake: 'Server handshake',
+                        messaging: 'Message exchange',
+                        cleanup: 'Connection cleanup'
+                    };
+
+                    const timeout = setTimeout(() => {
+                        results.push({ type: 'error', message: `❌ Timeout during ${phases[phase]} phase` });
+                        if (ws) ws.close();
+                        this.displayResults('Detailed WebSocket Test', results);
+                        resolve();
+                    }, 15000);
+
+                    try {
+                        ws = new WebSocket(wsUrl);
+
+                        // Connection state logging
+                        const logState = () => {
+                            const states = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'];
+                            this.log(`WebSocket state: ${states[ws.readyState]} (${ws.readyState})`);
+                        };
+
+                        ws.onopen = (event) => {
+                            phase = 'handshake';
+                            logState();
+                            results.push({ type: 'success', message: '✅ WebSocket connection opened' });
+                            this.log('WebSocket onopen event fired');
+                        };
+
+                        ws.onmessage = (event) => {
+                            logState();
+                            this.log(`Message received (${event.data.length} bytes)`);
+
+                            try {
+                                const data = JSON.parse(event.data);
+                                this.log(`Parsed message: ${JSON.stringify(data, null, 2)}`);
+
+                                if (data.type === 'connection') {
+                                    phase = 'messaging';
+                                    results.push({ type: 'success', message: '✅ Server handshake completed' });
+                                    results.push({ type: 'info', message: `📋 Connection ID: ${data.connection_id}` });
+                                    results.push({ type: 'info', message: `📋 Server config: ${JSON.stringify(data.server_config)}` });
+
+                                    // Test ping
+                                    setTimeout(() => {
+                                        this.log('Sending ping message...');
+                                        ws.send(JSON.stringify({ type: 'ping', timestamp: new Date().toISOString() }));
+                                    }, 1000);
+                                } else if (data.type === 'pong') {
+                                    results.push({ type: 'success', message: '✅ Ping/pong successful' });
+
+                                    // Close gracefully
+                                    phase = 'cleanup';
+                                    setTimeout(() => ws.close(1000, 'Test complete'), 1000);
+                                } else {
+                                    results.push({ type: 'info', message: `📨 Received: ${data.type}` });
+                                }
+                            } catch (e) {
+                                this.log('Received non-JSON data (binary?)');
+                                results.push({ type: 'warning', message: '⚠️ Received non-JSON message' });
+                            }
+                        };
+
+                        ws.onclose = (event) => {
+                            clearTimeout(timeout);
+                            logState();
+
+                            const codeInfo = this.getCloseCodeInfo(event.code);
+                            results.push({ type: event.code === 1000 ? 'success' : 'error',
+                                         message: `${event.code === 1000 ? '✅' : '❌'} WebSocket closed: ${codeInfo}` });
+
+                            this.log(`WebSocket closed: code=${event.code}, reason="${event.reason}", wasClean=${event.wasClean}`);
+                            this.displayResults('Detailed WebSocket Test', results);
+                            resolve();
+                        };
+
+                        ws.onerror = (error) => {
+                            logState();
+                            this.log(`WebSocket error during ${phases[phase]} phase`);
+                            this.log(`Error details: ${JSON.stringify(error, null, 2)}`);
+                            results.push({ type: 'error', message: `❌ Error during ${phases[phase]}: ${error.message || 'Unknown'}` });
+                        };
+
+                    } catch (error) {
+                        clearTimeout(timeout);
+                        results.push({ type: 'error', message: `❌ WebSocket creation failed: ${error.message}` });
+                        this.displayResults('Detailed WebSocket Test', results);
+                        resolve();
+                    }
+                });
+            }
+
+            getCloseCodeInfo(code) {
+                const codes = {
+                    1000: 'Normal closure',
+                    1001: 'Going away',
+                    1002: 'Protocol error',
+                    1003: 'Unsupported data',
+                    1005: 'No status code',
+                    1006: 'Abnormal closure (connection lost)',
+                    1007: 'Invalid frame payload data',
+                    1008: 'Policy violation',
+                    1009: 'Message too big',
+                    1010: 'Missing extension',
+                    1011: 'Internal error',
+                    1015: 'TLS handshake failure'
+                };
+                return codes[code] || `Unknown code (${code})`;
+            }
+
+            displayResults(title, results) {
+                const resultDiv = document.createElement('div');
+                resultDiv.innerHTML = `
+                    <h3>${title}</h3>
+                    ${results.map(r => `<div class="test-result ${r.type}">${r.message}</div>`).join('')}
+                `;
+                this.results.appendChild(resultDiv);
+            }
+
+            clearResults() {
+                this.results.innerHTML = '';
+            }
+
+            clearLogs() {
+                this.logs.innerHTML = '';
+            }
+
+            log(message) {
+                const timestamp = new Date().toLocaleTimeString();
+                const logEntry = document.createElement('div');
+                logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+                this.logs.appendChild(logEntry);
+                this.logs.scrollTop = this.logs.scrollHeight;
+                console.log(`[${timestamp}] ${message}`);
+            }
+        }
+
+        // Initialize diagnostic tool
+        document.addEventListener('DOMContentLoaded', () => {
+            new WebSocketDiagnostic();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+[Unit]
+Description=NVIDIA Riva WebSocket Bridge Server
+Documentation=https://github.com/your-org/nvidia-parakeet-ver-6
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=riva
+Group=riva
+WorkingDirectory=/opt/riva/nvidia-parakeet-ver-6
+Environment=PYTHONPATH=/opt/riva/nvidia-parakeet-ver-6
+EnvironmentFile=/opt/riva/nvidia-parakeet-ver-6/.env
+
+# Main service command
+ExecStart=/opt/riva/venv/bin/python -m src.asr.riva_websocket_bridge
+
+# Pre-start validation
+ExecStartPre=/bin/bash -c 'source /opt/riva/nvidia-parakeet-ver-6/.env && \
+    echo "Validating Riva connection to $${RIVA_HOST}:$${RIVA_PORT}..." && \
+    timeout 10 nc -z $${RIVA_HOST} $${RIVA_PORT} || \
+    (echo "ERROR: Cannot connect to Riva server at $${RIVA_HOST}:$${RIVA_PORT}" && exit 1)'
+
+# Graceful shutdown
+ExecStop=/bin/kill -SIGTERM $MAINPID
+TimeoutStopSec=30
+KillMode=mixed
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/riva/logs /opt/riva/nvidia-parakeet-ver-6/logs /tmp
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=riva-websocket-bridge
+
+# Health monitoring
+ExecReload=/bin/kill -SIGHUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
+Alias=riva-bridge.service

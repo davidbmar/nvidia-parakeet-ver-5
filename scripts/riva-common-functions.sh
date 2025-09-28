@@ -14,6 +14,57 @@
 #
 
 # =============================================================================
+# LOGGING AND OUTPUT FUNCTIONS
+# =============================================================================
+
+# Logging functions for consistent output
+log_info() {
+    echo "ℹ️  $1"
+}
+
+log_success() {
+    echo "✅ $1"
+}
+
+log_warn() {
+    echo "⚠️  $1"
+}
+
+log_error() {
+    echo "❌ $1"
+}
+
+log_execution_start() {
+    local script_name="$1"
+    local script_desc="$2"
+    echo "🚀 Starting: $script_name"
+    echo "📋 Description: $script_desc"
+    echo "⏰ Started at: $(date)"
+    echo ""
+}
+
+# Load environment with validation
+load_environment() {
+    if [[ ! -f .env ]]; then
+        log_error ".env file not found. Please create one from .env.example first"
+        exit 1
+    fi
+    source .env
+    log_info "Environment loaded from .env"
+}
+
+# Step execution helpers
+start_step() {
+    local step_name="$1"
+    echo ""
+    log_info "🔧 Starting step: $step_name"
+}
+
+end_step() {
+    log_success "Step completed"
+}
+
+# =============================================================================
 # CONFIGURATION AND VALIDATION
 # =============================================================================
 

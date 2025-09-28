@@ -20,16 +20,33 @@ scripts/riva-041-install-gpu-prerequisites.sh
   6. riva-135-build-and-deploy-models.sh - Alternative build and deploy
 
 
--------------------
-OLD?
-  1. riva-085-validate-environment.sh - Validates prerequisites (build box + GPU worker)
-/scripts/riva-085-start-traditional-riva-server.sh 
-  2. riva-086-prepare-model-artifacts.sh - Downloads, validates, and stages model artifacts to S3
-  3. riva-087-convert-models.sh - Converts models using official riva-build tools
-  4. riva-088-deploy-riva-server.sh - Deploys RIVA server with converted models
-  5. riva-089-validate-deployment.sh - End-to-end validation of deployment
+Testing Instructions:
 
+  1. Access the demo interface:
+  http://ip-172-31-44-30.compute-1.amazonaws.com:8080/static/demo.html
+  2. Or run both services in parallel:
+  # Terminal 1: Start WebSocket Bridge
+  cd /opt/riva-ws
+  python3 bin/riva_websocket_bridge.py
 
+  # Terminal 2: Start HTTP Server (for demo interface)
+  cd /home/ubuntu/event-b/nvidia-parakeet-ver-6
+  python3 -m http.server 8080
+
+  What You'll See:
+
+  - Demo interface with microphone controls
+  - Real-time connection status to WebSocket bridge
+  - Live audio visualization of your microphone input
+  - Real-time transcription results from RIVA's Parakeet RNNT model
+
+  Testing Flow:
+
+  1. Open the demo URL in a web browser
+  2. Grant microphone permissions
+  3. Click "Start Recording"
+  4. Speak into your microphone
+  5. See real-time transcription results appear
 
 
 

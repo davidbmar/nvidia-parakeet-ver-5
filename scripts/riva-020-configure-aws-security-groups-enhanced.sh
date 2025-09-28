@@ -44,12 +44,13 @@ if [ -z "$SECURITY_GROUP_ID" ]; then
     exit 1
 fi
 
-# Required ports for Riva/NIM
-PORTS=(22 50051 8000 8443 9000)
+# Required ports for Riva/NIM and WebSocket Demo
+PORTS=(22 50051 8000 8080 8443 9000)
 PORT_DESCRIPTIONS=(
     "SSH"
     "Riva gRPC"
     "Riva HTTP API"
+    "Demo HTTP Server"
     "WebSocket App"
     "NIM gRPC"
 )
@@ -399,5 +400,8 @@ echo "  • To modify IPs later, run this script again"
 echo ""
 echo -e "${CYAN}Next Steps:${NC}"
 echo "1. Restart NIM container if needed: docker restart parakeet-nim-s3-unified"
-echo "2. Test connectivity: python3 test_ec2_riva.py"
+echo "2. Test RIVA connectivity: python3 test_ec2_riva.py"
+echo "3. Start WebSocket bridge: cd /opt/riva-ws && python3 bin/riva_websocket_bridge.py"
+echo "4. Start demo server: python3 -m http.server 8080"
+echo "5. Access browser demo: http://[your-public-ip]:8080/static/demo.html"
 echo "================================================================"
