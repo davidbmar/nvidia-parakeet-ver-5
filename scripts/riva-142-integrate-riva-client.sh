@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# riva-141-integrate-riva-client.sh
+# riva-142-integrate-riva-client.sh
 # Purpose: Wire WebSocket bridge to existing riva_client.py with validation
 # Prerequisites: riva-140 completed successfully
 # Validation: Synthetic PCM returns RIVA partial results
@@ -380,7 +380,7 @@ async def validate_integration():
     print("=" * 60)
     if success:
         print("🎉 Integration validation PASSED")
-        print("💡 Ready for riva-142-test-audio-pipeline.sh")
+        print("💡 Ready for riva-143-test-audio-pipeline.sh")
     else:
         print("❌ Integration validation FAILED")
         print("🔧 Check configuration and dependencies")
@@ -436,7 +436,7 @@ main() {
     end_step
 
     log_success "✅ RIVA client integration completed successfully"
-    log_info "💡 Next step: Run riva-142-test-audio-pipeline.sh"
+    log_info "💡 Next step: Run riva-143-test-audio-pipeline.sh"
 
     # Print integration summary
     echo ""

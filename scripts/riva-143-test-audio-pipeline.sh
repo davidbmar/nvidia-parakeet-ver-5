@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# riva-142-test-audio-pipeline.sh
+# riva-143-test-audio-pipeline.sh
 # Purpose: Test browser AudioWorklet → WebSocket → RIVA audio pipeline
-# Prerequisites: riva-141 completed successfully
+# Prerequisites: riva-142 completed successfully
 # Validation: No frame drops over 60s, correct PCM format validation
 
 source "$(dirname "$0")/riva-common-functions.sh"
@@ -642,7 +642,7 @@ main() {
     end_step
 
     log_success "✅ Audio pipeline testing setup completed successfully"
-    log_info "💡 Next step: Run riva-143-test-transcription-flow.sh"
+    log_info "💡 Next step: Run riva-144-install-websocket-bridge-service.sh"
 
     # Print test summary
     echo ""

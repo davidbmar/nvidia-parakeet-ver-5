@@ -333,8 +333,8 @@ fi
 log_success "🎉 WebSocket bridge deployment complete!"
 echo
 echo "Next steps:"
-echo "  1. Run: ./scripts/riva-142-install-websocket-bridge-service.sh"
-echo "  2. Run: ./scripts/riva-143-test-websocket-client.sh"
+echo "  1. Run: ./scripts/riva-142-integrate-riva-client.sh"
+echo "  2. Run: ./scripts/riva-143-test-audio-pipeline.sh"
 echo
 echo "Manual testing:"
 echo "  Start: sudo -u riva /opt/riva/start-websocket-bridge.sh"

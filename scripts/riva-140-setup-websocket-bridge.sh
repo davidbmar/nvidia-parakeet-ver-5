@@ -327,7 +327,7 @@ main() {
     end_step
 
     log_success "✅ WebSocket bridge setup completed successfully"
-    log_info "💡 Next step: Run riva-141-integrate-riva-client.sh to deploy the bridge"
+    log_info "💡 Next step: Run riva-141-deploy-websocket-bridge.sh to deploy the bridge"
 
     # Print configuration summary
     echo ""
