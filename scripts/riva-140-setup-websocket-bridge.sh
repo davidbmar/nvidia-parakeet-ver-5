@@ -326,6 +326,10 @@ main() {
     test_basic_setup
     end_step
 
+    # Mark setup as complete
+    echo "WS_BRIDGE_CONFIG_COMPLETE=true" >> .env
+    log_success "Configuration completion flag added to .env"
+
     log_success "✅ WebSocket bridge setup completed successfully"
     log_info "💡 Next step: Run riva-141-deploy-websocket-bridge.sh to deploy the bridge"
 
