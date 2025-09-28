@@ -468,17 +468,20 @@ EOF
     end_step
 }
 
-# Function to create Triton model repository structure
-create_triton_repository() {
-    begin_step "Create Triton model repository"
+# Function to deploy model repository using riva-deploy
+deploy_riva_repository() {
+    begin_step "Deploy RIVA model repository using riva-deploy"
 
     local ssh_key_path="$HOME/.ssh/${SSH_KEY_NAME}.pem"
     local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
     local remote_user="ubuntu"
 
-    log "Creating Triton model repository structure"
+    local servicemaker_image="nvcr.io/nvidia/riva/riva-speech:${RIVA_SERVICEMAKER_VERSION}"
 
-    local repository_script=$(cat << EOF
+    log "Creating RIVA model repository using riva-deploy"
+    log "Using servicemaker image: $servicemaker_image"
+
+    local deploy_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
 
@@ -487,98 +490,147 @@ cd /tmp/riva-build
 # Set the normalized model name passed from control machine
 NORMALIZED_MODEL_NAME="${RIVA_ASR_MODEL_NAME}"
 
-# Create model repository structure
-REPO_DIR="work/model_repository"
-MODEL_DIR="\${REPO_DIR}/\${NORMALIZED_MODEL_NAME}"
-
-echo "Creating repository structure: \$MODEL_DIR"
+# Setup directories for riva-deploy
+REPO_DIR="/opt/riva/models"
+echo "Creating RIVA repository structure: \$REPO_DIR"
 echo "Using normalized model name: \$NORMALIZED_MODEL_NAME"
-mkdir -p "\${MODEL_DIR}/1"
 
-# Copy the built model
+# Ensure proper ownership of target directory
+sudo mkdir -p "\$REPO_DIR"
+sudo chown -R \$USER:\$USER "\$REPO_DIR"
+
+# Get the built model
 BUILT_MODEL="output/\${NORMALIZED_MODEL_NAME}.riva"
-if [[ -f "\$BUILT_MODEL" ]]; then
-    echo "Copying built model to repository..."
-    cp "\$BUILT_MODEL" "\${MODEL_DIR}/1/model.riva"
-
-    # Create model configuration
-    cat > "\${MODEL_DIR}/config.pbtxt" << CONFIG_EOF
-name: "\${NORMALIZED_MODEL_NAME}"
-platform: "riva"
-max_batch_size: 8
-input {
-  name: "AUDIO_DATA"
-  data_type: TYPE_FP32
-  dims: [-1]
-}
-input {
-  name: "AUDIO_LENGTH"
-  data_type: TYPE_INT32
-  dims: [1]
-}
-output {
-  name: "TRANSCRIPT"
-  data_type: TYPE_STRING
-  dims: [1]
-}
-version_policy: { latest { num_versions: 1 } }
-CONFIG_EOF
-
-    echo "✅ Triton repository created"
-    echo "Repository structure:"
-    find "\$REPO_DIR" -type f | sort
-
-    # Set proper permissions
-    chmod -R 755 "\$REPO_DIR"
-
-else
+if [[ ! -f "\$BUILT_MODEL" ]]; then
     echo "❌ Built model not found: \$BUILT_MODEL"
+    exit 1
+fi
+
+echo "Found built model: \$BUILT_MODEL"
+echo "Model size: \$(du -h "\$BUILT_MODEL" | cut -f1)"
+
+# Check if image is available locally
+echo "Checking for servicemaker container..."
+if ! docker images | grep -q "riva-speech.*servicemaker"; then
+    echo "Pulling servicemaker container..."
+    docker pull "${servicemaker_image}"
+fi
+
+echo "Starting riva-deploy process at \$(date)..."
+echo "Command: docker run --rm --gpus all -v /tmp/riva-build:/workspace -v \$REPO_DIR:\$REPO_DIR -e NGC_API_KEY=[REDACTED] --workdir /workspace ${servicemaker_image} riva-deploy /workspace/\${BUILT_MODEL#/tmp/riva-build/} \$REPO_DIR"
+
+# Create deploy log
+exec > >(tee -a /tmp/riva-build/deploy.log)
+exec 2>&1
+
+# Run riva-deploy in the servicemaker container
+# riva-deploy syntax: riva-deploy <rmir-file> <target-model-repo-dir>
+docker run --rm \\
+    --gpus all \\
+    -v /tmp/riva-build:/workspace \\
+    -v "\$REPO_DIR":"\$REPO_DIR" \\
+    -e NGC_API_KEY="${NGC_API_KEY}" \\
+    --workdir /workspace \\
+    "${servicemaker_image}" \\
+    riva-deploy \\
+        "/workspace/\${BUILT_MODEL#/tmp/riva-build/}" \\
+        "\$REPO_DIR"
+
+DEPLOY_EXIT_CODE=\$?
+echo "riva-deploy completed with exit code: \$DEPLOY_EXIT_CODE at \$(date)"
+
+# Verify the deployment output
+if [[ \$DEPLOY_EXIT_CODE -eq 0 ]]; then
+    echo "✅ riva-deploy completed successfully"
+    echo "Repository location: \$REPO_DIR"
+    echo "Repository contents:"
+    ls -la "\$REPO_DIR/" || true
+
+    # Check for model structure (riva-deploy might use different naming)
+    echo "Checking deployed models..."
+    model_count=\$(find "\$REPO_DIR" -maxdepth 1 -type d ! -path "\$REPO_DIR" | wc -l)
+    if [[ \$model_count -gt 0 ]]; then
+        echo "✅ Found \$model_count model(s) in repository"
+        echo "Model directories:"
+        ls -la "\$REPO_DIR/" || true
+        echo "Sample model files:"
+        find "\$REPO_DIR" -type f -name "*.plan" -o -name "*.onnx" -o -name "*.pb" | head -10 || true
+    else
+        echo "❌ No models found in repository: \$REPO_DIR"
+        echo "Repository contents:"
+        ls -la "\$REPO_DIR/" || true
+        exit 1
+    fi
+else
+    echo "❌ riva-deploy failed"
+    echo "Exit code: \$DEPLOY_EXIT_CODE"
+    echo "Deploy log (last 50 lines):"
+    tail -50 /tmp/riva-build/deploy.log || echo "No deploy log available"
     exit 1
 fi
 EOF
     )
 
-    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$repository_script"; then
-        log "Triton model repository created successfully"
+    log "Starting riva-deploy process..."
+    local deploy_start_time=$(date +%s)
 
-        # Validate repository structure (ChatGPT recommendation)
+    if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$deploy_script"; then
+        local deploy_end_time=$(date +%s)
+        local deploy_duration=$((deploy_end_time - deploy_start_time))
+        log "riva-deploy completed successfully in ${deploy_duration}s"
+        echo "$deploy_duration" > "${RIVA_STATE_DIR}/deploy_duration"
+
+        # Validate the deployed repository
+        log "Validating deployed RIVA repository..."
         local validation_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
 
-cd /tmp/riva-build/work/model_repository
+REPO_DIR="/opt/riva/models"
+NORMALIZED_MODEL_NAME="${RIVA_ASR_MODEL_NAME}"
 
-echo "🔍 Validating repository structure..."
-for model_dir in */; do
-    model_dir=\${model_dir%/}  # Remove trailing slash
-    config_file="\$model_dir/config.pbtxt"
+echo "🔍 Validating RIVA repository structure..."
+echo "Repository: \$REPO_DIR"
+echo "Expected model: \$NORMALIZED_MODEL_NAME"
 
-    if [[ -f "\$config_file" ]]; then
-        config_name=\$(grep '^name:' "\$config_file" | sed 's/name: *"\(.*\)"/\1/')
-        if [[ "\$model_dir" == "\$config_name" ]]; then
-            echo "✅ \$model_dir: directory name matches config name"
-        else
-            echo "❌ \$model_dir: directory name '\$model_dir' != config name '\$config_name'"
-            exit 1
-        fi
-    else
-        echo "❌ \$model_dir: missing config.pbtxt"
-        exit 1
-    fi
-done
+if [[ ! -d "\$REPO_DIR" ]]; then
+    echo "❌ Repository directory not found: \$REPO_DIR"
+    exit 1
+fi
+
+# Check if any model directories were created
+model_dirs=\$(find "\$REPO_DIR" -maxdepth 1 -type d ! -path "\$REPO_DIR" | wc -l)
+if [[ \$model_dirs -eq 0 ]]; then
+    echo "❌ No model directories found in: \$REPO_DIR"
+    echo "Repository contents:"
+    ls -la "\$REPO_DIR/" || true
+    exit 1
+fi
 
 echo "✅ Repository structure validation passed"
+echo "Found \$model_dirs model directories in repository"
+echo "Repository structure:"
+ls -la "\$REPO_DIR/" || true
+echo "Model contents (sample):"
+find "\$REPO_DIR" -type f | head -20
 EOF
         )
 
         if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$validation_script"; then
-            log "Repository structure validation passed"
+            log "RIVA repository validation passed"
         else
-            err "Repository structure validation failed - directory names must match config.pbtxt names"
+            err "RIVA repository validation failed"
             return 1
         fi
     else
-        err "Failed to create Triton model repository"
+        local deploy_end_time=$(date +%s)
+        local deploy_duration=$((deploy_end_time - deploy_start_time))
+        err "riva-deploy failed or timed out after ${deploy_duration}s"
+
+        # Try to get deploy logs for debugging
+        log "Attempting to retrieve deploy logs..."
+        ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "tail -100 /tmp/riva-build/deploy.log || echo 'No deploy log available'" || true
+
         return 1
     fi
 
@@ -623,32 +675,44 @@ if [[ ! -f "output/\${NORMALIZED_MODEL_NAME}.riva" ]]; then
     exit 1
 fi
 
-if [[ ! -d "work/model_repository" ]]; then
-    echo "❌ Triton repository not found: work/model_repository"
+if [[ ! -d "/opt/riva/models" ]]; then
+    echo "❌ RIVA repository not found: /opt/riva/models"
+    exit 1
+fi
+
+# Check if any model directories with the normalized name prefix exist
+model_dirs_count=\$(find /opt/riva/models -maxdepth 1 -type d -name "*\${NORMALIZED_MODEL_NAME}*" | wc -l)
+if [[ \$model_dirs_count -eq 0 ]]; then
+    echo "❌ No RIVA model directories found with prefix: \${NORMALIZED_MODEL_NAME}"
     exit 1
 fi
 
 echo "Files ready for transfer:"
 echo "  Converted model: \$(du -h "output/\${NORMALIZED_MODEL_NAME}.riva" | cut -f1)"
-echo "  Triton repository: \$(du -sh "work/model_repository" | cut -f1)"
+echo "  RIVA repository: \$(du -sh "/opt/riva/models" | cut -f1)"
+echo "  Model directories: \$(find /opt/riva/models -maxdepth 1 -type d -name "*\${NORMALIZED_MODEL_NAME}*" | wc -l) directories"
 echo "  Build log: \$(du -h "build.log" | cut -f1 2>/dev/null || echo 'N/A')"
+echo "  Deploy log: \$(du -h "deploy.log" | cut -f1 2>/dev/null || echo 'N/A')"
 
 # Create file list with checksums for verification
 echo "Creating transfer manifest..."
 mkdir -p output_ready
 cp "output/\${NORMALIZED_MODEL_NAME}.riva" output_ready/
-cp -r work/model_repository output_ready/
+cp -r /opt/riva/models output_ready/riva_repository
 if [[ -f "build.log" ]]; then
     cp build.log output_ready/
 fi
+if [[ -f "deploy.log" ]]; then
+    cp deploy.log output_ready/
+fi
 
 cd output_ready
-# Generate checksums for all files EXCEPT the checksum file itself and build.log
+# Generate checksums for all files EXCEPT the checksum file itself and log files
 # This prevents the self-referential checksum issue
-find . -type f \( ! -name 'transfer_checksums.txt' ! -name 'build.log' \) -print0 | \
+find . -type f \( ! -name 'transfer_checksums.txt' ! -name 'build.log' ! -name 'deploy.log' \) -print0 | \
     sort -z | \
     xargs -0 sha256sum > transfer_checksums.txt
-echo "✅ Files prepared for transfer (excluding transfer_checksums.txt and build.log from checksums)"
+echo "✅ Files prepared for transfer (excluding transfer_checksums.txt and log files from checksums)"
 EOF
     )
 
@@ -672,8 +736,8 @@ EOF
         return 1
     fi
 
-    if [[ ! -d "model_repository" ]]; then
-        err "❌ Triton repository not found after transfer: model_repository"
+    if [[ ! -d "riva_repository" ]]; then
+        err "❌ RIVA repository not found after transfer: riva_repository"
         rm -rf "$temp_dir"
         return 1
     fi
@@ -757,9 +821,12 @@ EOF
 
     log "Files to upload:"
     log "  Converted model: $(du -h "${RIVA_ASR_MODEL_NAME}.riva" | cut -f1)"
-    log "  Triton repository: $(du -sh "model_repository" | cut -f1)"
+    log "  RIVA repository: $(du -sh "riva_repository" | cut -f1)"
     if [[ -f "build.log" ]]; then
         log "  Build log: $(du -h "build.log" | cut -f1)"
+    fi
+    if [[ -f "deploy.log" ]]; then
+        log "  Deploy log: $(du -h "deploy.log" | cut -f1)"
     fi
 
     # Upload built model with metadata
@@ -769,17 +836,24 @@ EOF
         --metadata "artifact-type=converted-model,build-version=${RIVA_SERVICEMAKER_VERSION},build-duration=${build_duration},upload-timestamp=$upload_timestamp" \
         --storage-class STANDARD
 
-    # Upload Triton repository
-    log "Uploading Triton model repository..."
-    aws s3 sync "model_repository/" \
-        "${s3_base}/triton_repository/" \
-        --metadata "artifact-type=triton-repository,upload-timestamp=$upload_timestamp" \
+    # Upload RIVA repository
+    log "Uploading RIVA model repository..."
+    aws s3 sync "riva_repository/" \
+        "${s3_base}/riva_repository/" \
+        --metadata "artifact-type=riva-repository,upload-timestamp=$upload_timestamp" \
         --delete
 
     # Upload build log if available
     if [[ -f "build.log" ]]; then
         log "Uploading build log..."
         aws s3 cp "build.log" "${s3_base}/logs/conversion.log" \
+            --content-type "text/plain"
+    fi
+
+    # Upload deploy log if available
+    if [[ -f "deploy.log" ]]; then
+        log "Uploading deploy log..."
+        aws s3 cp "deploy.log" "${s3_base}/logs/deployment.log" \
             --content-type "text/plain"
     fi
 
@@ -809,16 +883,17 @@ EOF
       "size_bytes": $(stat -c%s "${RIVA_ASR_MODEL_NAME}.riva"),
       "sha256": "$(sha256sum "${RIVA_ASR_MODEL_NAME}.riva" | cut -d' ' -f1)"
     },
-    "triton_repository": {
-      "s3_uri": "${s3_base}/triton_repository/",
-      "model_count": $(find "model_repository" -name "config.pbtxt" | wc -l)
+    "riva_repository": {
+      "s3_uri": "${s3_base}/riva_repository/",
+      "model_count": $(find "riva_repository" -name "*.plan" -o -name "*.onnx" -o -name "*.pb" | wc -l)
     },
-    "build_log": "${s3_base}/logs/conversion.log"
+    "build_log": "${s3_base}/logs/conversion.log",
+    "deploy_log": "${s3_base}/logs/deployment.log"
   },
   "validation": {
     "conversion_successful": true,
     "output_file_exists": true,
-    "triton_repository_created": true
+    "riva_repository_created": true
   }
 }
 MANIFEST_EOF
@@ -844,14 +919,14 @@ COMPLETION_EOF
     log "Upload summary:"
     log "  Base URI: ${s3_base}"
     log "  Converted model: ${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva"
-    log "  Triton repository: ${s3_base}/triton_repository/"
+    log "  RIVA repository: ${s3_base}/riva_repository/"
     log "  Conversion manifest: ${s3_base}/conversion_manifest.json"
 
     # Cleanup local temp directory
     rm -rf "$temp_dir"
 
     # Save converted model S3 locations and normalized name for next script
-    echo "${s3_base}/triton_repository/" > "${RIVA_STATE_DIR}/triton_repository_s3"
+    echo "${s3_base}/riva_repository/" > "${RIVA_STATE_DIR}/riva_repository_s3"
     echo "${s3_base}/converted/${RIVA_ASR_MODEL_NAME}.riva" > "${RIVA_STATE_DIR}/converted_model_s3"
     echo "${s3_base}/conversion_manifest.json" > "${RIVA_STATE_DIR}/conversion_manifest_s3"
     echo "${RIVA_ASR_MODEL_NAME}" > "${RIVA_STATE_DIR}/normalized_model_name"
@@ -902,10 +977,10 @@ generate_conversion_summary() {
     begin_step "Generate conversion summary"
 
     local s3_base
-    local triton_repo_s3
+    local riva_repo_s3
     local converted_model_s3
     s3_base=$(cat "${RIVA_STATE_DIR}/s3_staging_uri")
-    triton_repo_s3=$(cat "${RIVA_STATE_DIR}/triton_repository_s3")
+    riva_repo_s3=$(cat "${RIVA_STATE_DIR}/riva_repository_s3")
     converted_model_s3=$(cat "${RIVA_STATE_DIR}/converted_model_s3")
 
     echo
@@ -914,7 +989,7 @@ generate_conversion_summary() {
     echo "🎯 Model: ${RIVA_ASR_MODEL_NAME} (${RIVA_ASR_LANG_CODE})"
     echo "📋 Version: ${MODEL_VERSION}"
     echo "🛠️  Servicemaker: ${RIVA_SERVICEMAKER_VERSION}"
-    echo "🗂️  Triton Repository: $triton_repo_s3"
+    echo "🗂️  RIVA Repository: $riva_repo_s3"
     echo "📦 Converted Model: $converted_model_s3"
     echo "⚙️  Build Options: ${RIVA_BUILD_OPTS}"
     echo
@@ -966,7 +1041,7 @@ main() {
     setup_remote_environment
     download_artifacts_to_worker
     run_riva_build
-    create_triton_repository
+    deploy_riva_repository
     upload_converted_models
     cleanup_remote_environment
     generate_conversion_summary

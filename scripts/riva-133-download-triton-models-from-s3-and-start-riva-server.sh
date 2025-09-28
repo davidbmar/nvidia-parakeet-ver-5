@@ -98,37 +98,37 @@ EOF
     end_step
 }
 
-# Function to download Triton repository from S3
-download_triton_repository() {
-    begin_step "Download Triton repository from S3"
+# Function to download RIVA repository from S3
+download_riva_repository() {
+    begin_step "Download RIVA repository from S3"
 
     local ssh_key_path="$HOME/.ssh/${SSH_KEY_NAME}.pem"
     local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
     local remote_user="ubuntu"
 
     # Get S3 location from previous step
-    local triton_repo_s3
-    if [[ -f "${RIVA_STATE_DIR}/triton_repository_s3" ]]; then
-        triton_repo_s3=$(cat "${RIVA_STATE_DIR}/triton_repository_s3")
+    local riva_repo_s3
+    if [[ -f "${RIVA_STATE_DIR}/riva_repository_s3" ]]; then
+        riva_repo_s3=$(cat "${RIVA_STATE_DIR}/riva_repository_s3")
     else
-        err "No Triton repository S3 location found. Run riva-131-convert-models.sh first."
+        err "No RIVA repository S3 location found. Run riva-131-convert-models.sh first."
         return 1
     fi
 
-    log "Downloading Triton repository from: $triton_repo_s3"
+    log "Downloading RIVA repository from: $riva_repo_s3"
 
     # Download to build machine first, then transfer to GPU
-    local temp_dir="/tmp/triton-models-$$"
+    local temp_dir="/tmp/riva-models-$$"
     mkdir -p "$temp_dir"
 
-    log "Downloading Triton models to build machine: $temp_dir"
-    if ! aws s3 sync "$triton_repo_s3" "$temp_dir/" --exclude "*.log" --exclude "*.tmp"; then
-        err "Failed to download Triton models from S3"
+    log "Downloading RIVA models to build machine: $temp_dir"
+    if ! aws s3 sync "$riva_repo_s3" "$temp_dir/" --exclude "*.log" --exclude "*.tmp"; then
+        err "Failed to download RIVA models from S3"
         rm -rf "$temp_dir"
         return 1
     fi
 
-    log "Transferring Triton models to GPU instance"
+    log "Transferring RIVA models to GPU instance"
     local download_script=$(cat << EOF
 #!/bin/bash
 set -euo pipefail
@@ -190,16 +190,16 @@ EOF
     )
 
     if ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$verify_script"; then
-        log "Triton repository verification successful"
+        log "RIVA repository verification successful"
     else
-        err "Failed to verify Triton repository"
+        err "Failed to verify RIVA repository"
         rm -rf "$temp_dir"
         return 1
     fi
 
     # Cleanup temp directory
     rm -rf "$temp_dir"
-    log "Triton repository downloaded and transferred successfully"
+    log "RIVA repository downloaded and transferred successfully"
 
     end_step
 }
@@ -296,11 +296,15 @@ set -euo pipefail
 
 echo "Starting RIVA server container with start-riva command (enables custom backends)..."
 
-# Build Docker run command
+# Build Docker run command with recommended settings
 DOCKER_CMD="docker run -d \\
     --name ${RIVA_CONTAINER_NAME} \\
     --gpus all \\
     --restart unless-stopped \\
+    --init \\
+    --shm-size=1G \\
+    --ulimit memlock=-1 \\
+    --ulimit stack=67108864 \\
     -p ${RIVA_GRPC_PORT}:50051 \\
     -p ${RIVA_HTTP_PORT}:8000"
 
@@ -311,7 +315,7 @@ fi
 
 # Add volume mounts and start-riva command (Riva mode with custom backends)
 DOCKER_CMD="\$DOCKER_CMD \\
-    -v ${RIVA_MODEL_REPO_PATH}:/data/models:ro \\
+    -v /opt/riva:/data \\
     -v /tmp/riva-logs:/opt/riva/logs \\
     ${riva_image} \\
     start-riva \\
@@ -486,7 +490,7 @@ generate_deployment_summary() {
   "model": {
     "name": "${RIVA_ASR_MODEL_NAME}",
     "repository_path": "${RIVA_MODEL_REPO_PATH}",
-    "triton_repository": "$(cat "${RIVA_STATE_DIR}/triton_repository_s3" 2>/dev/null || echo 'unknown')"
+    "riva_repository": "$(cat "${RIVA_STATE_DIR}/riva_repository_s3" 2>/dev/null || echo 'unknown')"
   },
   "configuration": {
     "metrics_enabled": ${ENABLE_METRICS},
@@ -531,13 +535,13 @@ main() {
     require_env_vars "${REQUIRED_VARS[@]}"
 
     # Verify we have converted models
-    if [[ ! -f "${RIVA_STATE_DIR}/triton_repository_s3" ]]; then
+    if [[ ! -f "${RIVA_STATE_DIR}/riva_repository_s3" ]]; then
         err "No converted models found. Run riva-131-convert-models.sh first."
         return 1
     fi
 
     prepare_gpu_worker
-    download_triton_repository
+    download_riva_repository
     start_riva_server
     wait_for_riva_ready
     validate_model_loading
