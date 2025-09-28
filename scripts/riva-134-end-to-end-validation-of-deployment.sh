@@ -384,6 +384,7 @@ set -euo pipefail
 need_install=()
 command -v aws >/dev/null 2>&1 || need_install+=("awscli")
 command -v ffmpeg >/dev/null 2>&1 || need_install+=("ffmpeg")
+command -v curl >/dev/null 2>&1 || need_install+=("curl")
 if [[ ${#need_install[@]} -gt 0 ]]; then
   if [[ "${ALLOW_PACKAGE_INSTALL:-0}" == "1" ]]; then
     # Update package lists, ignoring repository errors
@@ -393,6 +394,7 @@ if [[ ${#need_install[@]} -gt 0 ]]; then
       case "$p" in
         awscli) sudo apt-get install -y awscli 2>/dev/null || echo "Failed to install awscli" ;;
         ffmpeg) sudo apt-get install -y ffmpeg 2>/dev/null || echo "Failed to install ffmpeg" ;;
+        curl)   sudo apt-get install -y curl   2>/dev/null || echo "Failed to install curl" ;;
       esac
     done
     set -e  # Re-enable exit on error
@@ -401,6 +403,7 @@ if [[ ${#need_install[@]} -gt 0 ]]; then
     final_missing=()
     command -v aws >/dev/null 2>&1 || final_missing+=("awscli")
     command -v ffmpeg >/dev/null 2>&1 || final_missing+=("ffmpeg")
+    command -v curl >/dev/null 2>&1 || final_missing+=("curl")
     if [[ ${#final_missing[@]} -gt 0 ]]; then
       echo "STILL_MISSING:${final_missing[*]}"
       exit 3
@@ -426,15 +429,15 @@ fetch_test_audio_from_s3() {
   local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
   local remote_user="ubuntu"
 
-  begin_step "Fetch first ${TEST_MAX_FILES:-4} *.${TEST_FILE_EXT:-webm} from ${TEST_AUDIO_S3_PREFIX}"
+  begin_step "Fetch first ${TEST_MAX_FILES:-4} matching audio from ${TEST_AUDIO_S3_PREFIX} (extensions: ${TEST_FILE_EXTS:-webm|m4a|mp3|wav})"
   ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" bash -lc '
     set -euo pipefail
     TEST_DIR="/tmp/riva_validation_audio"
     mkdir -p "$TEST_DIR"
     : "${TEST_AUDIO_S3_PREFIX:?TEST_AUDIO_S3_PREFIX required}"
-    : "${TEST_FILE_EXT:=webm}"
+    : "${TEST_FILE_EXTS:=webm|m4a|mp3|wav}"
     : "${TEST_MAX_FILES:=4}"
-    mapfile -t KEYS < <(aws s3 ls "$TEST_AUDIO_S3_PREFIX" | awk "{print \$4}" | grep -E "\.${TEST_FILE_EXT}$" | head -n "${TEST_MAX_FILES}")
+    mapfile -t KEYS < <(aws s3 ls "$TEST_AUDIO_S3_PREFIX" | awk "{print \$4}" | grep -E "\.(${TEST_FILE_EXTS})$" | head -n "${TEST_MAX_FILES}")
     if [[ ${#KEYS[@]} -eq 0 ]]; then
       echo "NO_MATCHING_FILES"; exit 2
     fi
@@ -446,7 +449,7 @@ fetch_test_audio_from_s3() {
 
   if grep -q "NO_MATCHING_FILES" /tmp/riva134_fetch.log; then
     add_validation_result "fetch_audio" "fail" "No matching files found in S3 prefix" "$(cat /tmp/riva134_fetch.log)"
-    end_step; return 1
+    end_step; return 0
   fi
   add_validation_result "fetch_audio" "pass" "Downloaded test audio from S3" "$(tail -n1 /tmp/riva134_fetch.log)"
   end_step
@@ -457,24 +460,105 @@ transcode_to_wav16k() {
   local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
   local remote_user="ubuntu"
 
-  begin_step "Transcode .${TEST_FILE_EXT:-webm} → 16kHz mono WAV"
+  begin_step "Transcode audio → 16kHz mono WAV"
   ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" bash -lc '
     set -euo pipefail
     TEST_DIR="/tmp/riva_validation_audio"
     OUT_DIR="$TEST_DIR/wav16k"; mkdir -p "$OUT_DIR"
+    : "${TEST_FILE_EXTS:=webm|m4a|mp3|wav}"
     shopt -s nullglob
-    for f in "$TEST_DIR"/*.'"${TEST_FILE_EXT:-webm}"'; do
-      base="$(basename "$f" .'"${TEST_FILE_EXT:-webm}"')"
-      ffmpeg -loglevel error -y -i "$f" -ac 1 -ar 16000 "$OUT_DIR/${base}.wav"
-      echo "WAV:$OUT_DIR/${base}.wav"
+    succ=0; fail=0
+    for f in "$TEST_DIR"/*; do
+      [[ -f "$f" ]] || continue
+      ext="${f##*.}"
+      if [[ "$ext" =~ ^(${TEST_FILE_EXTS})$ ]]; then
+        base="$(basename "$f" ."$ext")"
+        if ffmpeg -loglevel error -y -i "$f" -ac 1 -ar 16000 "$OUT_DIR/${base}.wav"; then
+          echo "WAV:$OUT_DIR/${base}.wav"; ((succ++))
+        else
+          echo "TRANSCODE_FAIL:$f"; ((fail++))
+        fi
+      fi
     done
+    echo "COUNTS:succ=${succ} fail=${fail}"
   ' > /tmp/riva134_transcode.log 2>&1 || true
 
-  if ! grep -q "WAV:" /tmp/riva134_transcode.log; then
-    add_validation_result "transcode" "fail" "Failed to transcode test audio to WAV 16k" "$(tail -n50 /tmp/riva134_transcode.log)"
-    end_step; return 1
+  # Soft-fail behavior: never abort the run here
+  if ! grep -q "^WAV:" /tmp/riva134_transcode.log; then
+    add_validation_result "transcode" "fail" "No WAVs produced by transcode" "$(tail -n50 /tmp/riva134_transcode.log)"
+    end_step; return 0
   fi
-  add_validation_result "transcode" "pass" "Transcoded test audio to WAV 16k" "$(grep '^WAV:' /tmp/riva134_transcode.log | head -n4)"
+  # Partial success detection
+  counts="$(grep '^COUNTS:' /tmp/riva134_transcode.log | tail -n1 | sed 's/^COUNTS://')"
+  succ=$(echo "$counts" | sed -n 's/.*succ=\([0-9]\+\).*/\1/p'); succ=${succ:-0}
+  failc=$(echo "$counts" | sed -n 's/.*fail=\([0-9]\+\).*/\1/p'); failc=${failc:-0}
+  if (( failc > 0 )); then
+    add_validation_result "transcode" "warn" "Partial success: ${succ} succeeded, ${failc} failed" "$(grep '^WAV:' /tmp/riva134_transcode.log | head -n4)"
+  else
+    add_validation_result "transcode" "pass" "Transcoded ${succ} file(s) to WAV 16k" "$(grep '^WAV:' /tmp/riva134_transcode.log | head -n4)"
+  fi
+  end_step
+}
+
+find_or_create_wavs() {
+  local ssh_key_path="$HOME/.ssh/${SSH_KEY_NAME}.pem"
+  local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+  local remote_user="ubuntu"
+
+  begin_step "Ensure at least one WAV16k exists (fallbacks if needed)"
+  ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" bash -lc '
+    set -euo pipefail
+    TEST_DIR="/tmp/riva_validation_audio"
+    OUT_DIR="$TEST_DIR/wav16k"; mkdir -p "$OUT_DIR"
+    have_any() { ls -1 "$OUT_DIR"/*.wav >/dev/null 2>&1; }
+
+    if have_any; then
+      echo "HAVE_WAV16K"; exit 0
+    fi
+
+    # Try raw WAVs (any rate) already in TEST_DIR → resample
+    shopt -s nullglob
+    for w in "$TEST_DIR"/*.wav; do
+      base="$(basename "$w" .wav)"
+      if ffmpeg -loglevel error -y -i "$w" -ac 1 -ar 16000 "$OUT_DIR/${base}.wav"; then
+        echo "RESAMPLED:$OUT_DIR/${base}.wav"
+      fi
+    done
+    if have_any; then echo "RESAMPLED_OK"; exit 0; fi
+
+    # S3 fallback
+    if [[ -n "${S3_FALLBACK_WAV:-}" ]]; then
+      fname="${S3_FALLBACK_WAV##*/}"
+      if aws s3 cp "${S3_FALLBACK_WAV}" "$TEST_DIR/$fname"; then
+        ffmpeg -loglevel error -y -i "$TEST_DIR/$fname" -ac 1 -ar 16000 "$OUT_DIR/${fname%.wav}.wav" && echo "S3_FALLBACK_OK"
+      fi
+    fi
+    if have_any; then echo "FALLBACK_OK"; exit 0; fi
+
+    # HTTP(S) fallback
+    if [[ -n "${FALLBACK_WAV_URL:-}" ]]; then
+      fname="fallback.wav"
+      if curl -fsSL "${FALLBACK_WAV_URL}" -o "$TEST_DIR/$fname"; then
+        ffmpeg -loglevel error -y -i "$TEST_DIR/$fname" -ac 1 -ar 16000 "$OUT_DIR/$fname" && echo "URL_FALLBACK_OK"
+      fi
+    fi
+    if have_any; then echo "FALLBACK_OK"; exit 0; fi
+
+    # Optional synthetic tone (off by default)
+    if [[ "${ALLOW_SYNTH_TONE_WAV:-0}" == "1" ]]; then
+      ffmpeg -loglevel error -y -f lavfi -i "sine=frequency=1000:duration=2" -ac 1 -ar 16000 "$OUT_DIR/synth.wav" && echo "SYNTH_OK"
+    fi
+    if have_any; then echo "SYNTH_READY"; exit 0; fi
+
+    echo "NO_WAVS"
+    exit 2
+  ' > /tmp/riva134_wavready.log 2>&1 || true
+
+  if grep -q "NO_WAVS" /tmp/riva134_wavready.log; then
+    add_validation_result "wav_ready" "fail" "No WAVs available after fallbacks" "$(tail -n50 /tmp/riva134_wavready.log)"
+  else
+    add_validation_result "wav_ready" "pass" "At least one WAV16k is available for ASR" "$(tail -n5 /tmp/riva134_wavready.log)"
+  fi
   end_step
 }
 
@@ -837,7 +921,7 @@ main() {
 
     # Only prompt if unset; user can just press Enter to accept defaults.
     prompt_env_default TEST_AUDIO_S3_PREFIX "s3://dbm-cf-2-web/integration-test/" "S3 prefix for test audio"
-    prompt_env_default TEST_FILE_EXT "webm" "File extension for test audio"
+    prompt_env_default TEST_FILE_EXTS "webm|m4a|mp3|wav" "Allowed file extensions (regex OR)"
     prompt_env_default TEST_MAX_FILES "4" "Max number of test files"
     prompt_env_default RIVA_METRICS_PORT "9090" "Riva Prometheus metrics port"
     prompt_env_default STREAMING_CHUNK_MS "320" "Streaming chunk size (ms)"
@@ -846,21 +930,25 @@ main() {
     prompt_env_default PERF_P95_CHUNK_MS "600" "Max allowed p95 chunk latency (ms)"
     prompt_env_default LOG_SCAN_MINUTES "5" "Minutes of logs to scan"
     prompt_env_default ALLOW_PACKAGE_INSTALL "1" "Allow apt-get install of tools (1=yes,0=no)"
+    prompt_env_default S3_FALLBACK_WAV "" "Optional S3 URI to a fallback WAV"
+    prompt_env_default FALLBACK_WAV_URL "" "Optional HTTP(S) URL to a fallback WAV"
+    prompt_env_default ALLOW_SYNTH_TONE_WAV "0" "If no audio works, synthesize a 2s 1kHz WAV (1=yes,0=no)"
 
     test_server_connectivity
-    test_http_endpoints
-    test_grpc_endpoints
-    validate_model_loading
-    test_basic_asr
+    test_http_endpoints || true
+    test_grpc_endpoints || true
+    validate_model_loading || true
+    test_basic_asr || true
 
     # Option B steps
-    ensure_tools_on_gpu
-    fetch_test_audio_from_s3
-    transcode_to_wav16k
-    warmup_request
-    test_asr_streaming
-    test_metrics_endpoint
-    scan_container_logs
+    ensure_tools_on_gpu || true
+    fetch_test_audio_from_s3 || true
+    transcode_to_wav16k || true
+    find_or_create_wavs || true
+    warmup_request || true
+    test_asr_streaming || true
+    test_metrics_endpoint || true
+    scan_container_logs || true
 
     generate_validation_report
 
