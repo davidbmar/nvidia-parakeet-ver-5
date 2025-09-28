@@ -11,14 +11,24 @@ source "$(dirname "$0")/_lib.sh"
 
 init_script "134" "Validate Deployment" "End-to-end validation of RIVA server deployment" "" ""
 
+# Map existing .env variables to required script variables
+: "${RIVA_GRPC_PORT:=${RIVA_PORT:-50051}}"
+: "${RIVA_CONTAINER_NAME:=riva-server}"
+
+# Load normalized model name from previous step (like riva-133 does)
+if [[ -f "${RIVA_STATE_DIR}/normalized_model_name" ]]; then
+    RIVA_ASR_MODEL_NAME=$(cat "${RIVA_STATE_DIR}/normalized_model_name")
+elif [[ -n "${RIVA_MODEL:-}" ]]; then
+    RIVA_ASR_MODEL_NAME="${RIVA_MODEL}"
+else
+    RIVA_ASR_MODEL_NAME="parakeet-rnnt-1-1b-en-us"
+fi
+
 # Required environment variables
 REQUIRED_VARS=(
     "GPU_INSTANCE_IP"
     "SSH_KEY_NAME"
-    "RIVA_GRPC_PORT"
     "RIVA_HTTP_PORT"
-    "RIVA_ASR_MODEL_NAME"
-    "RIVA_CONTAINER_NAME"
 )
 
 # Optional variables with defaults
