@@ -62,8 +62,9 @@ test_server_connectivity() {
     local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
     local remote_user="ubuntu"
 
-    # Test SSH connectivity
+    # Test SSH connectivity with simple timeout
     log "Testing SSH connection to ${GPU_INSTANCE_IP}..."
+
     if timeout 10 ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "echo 'ssh_ok'" 2>/dev/null | grep -q "ssh_ok"; then
         add_validation_result "ssh_connectivity" "pass" "SSH connection successful" ""
     else
