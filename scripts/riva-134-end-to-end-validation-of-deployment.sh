@@ -384,13 +384,25 @@ command -v aws >/dev/null 2>&1 || need_install+=("awscli")
 command -v ffmpeg >/dev/null 2>&1 || need_install+=("ffmpeg")
 if [[ ${#need_install[@]} -gt 0 ]]; then
   if [[ "${ALLOW_PACKAGE_INSTALL:-0}" == "1" ]]; then
-    sudo apt-get update -y
+    # Update package lists, ignoring repository errors
+    set +e  # Temporarily disable exit on error
+    sudo apt-get update -y 2>/dev/null || echo "Warning: Some repositories failed to update, continuing..."
     for p in "${need_install[@]}"; do
       case "$p" in
-        awscli) sudo apt-get install -y awscli ;;
-        ffmpeg) sudo apt-get install -y ffmpeg ;;
+        awscli) sudo apt-get install -y awscli 2>/dev/null || echo "Failed to install awscli" ;;
+        ffmpeg) sudo apt-get install -y ffmpeg 2>/dev/null || echo "Failed to install ffmpeg" ;;
       esac
     done
+    set -e  # Re-enable exit on error
+
+    # Final check if tools are now available
+    final_missing=()
+    command -v aws >/dev/null 2>&1 || final_missing+=("awscli")
+    command -v ffmpeg >/dev/null 2>&1 || final_missing+=("ffmpeg")
+    if [[ ${#final_missing[@]} -gt 0 ]]; then
+      echo "STILL_MISSING:${final_missing[*]}"
+      exit 3
+    fi
   else
     echo "MISSING:${need_install[*]}"
     exit 3
@@ -587,6 +599,22 @@ test_asr_streaming() {
     rtf=$(jq -r ".rtf" <<< "$line")
     if [[ -z "$transcript" || "$transcript" == "null" ]]; then fail_any=1; fi
     awk -v r="$rtf" -v max="${PERF_MAX_RTF:-0.75}" 'BEGIN{ if (r>max) exit 1; exit 0 }' || fail_any=1
+  done <<< "$items"
+
+  # Display transcriptions for user visibility
+  echo ""
+  echo "🎤 TRANSCRIPTION RESULTS:"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  while read -r line; do
+    [[ -z "$line" ]] && continue
+    local file transcript rtf
+    file=$(jq -r '.file' <<< "$line")
+    transcript=$(jq -r '.transcript' <<< "$line")
+    rtf=$(jq -r '.rtf' <<< "$line")
+    echo "📁 File: $file"
+    echo "📝 Transcript: \"$transcript\""
+    echo "⏱️  RTF: $rtf"
+    echo ""
   done <<< "$items"
 
   if [[ $fail_any -eq 0 ]]; then
