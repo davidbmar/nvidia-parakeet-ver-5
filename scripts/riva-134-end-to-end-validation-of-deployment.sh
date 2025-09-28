@@ -63,6 +63,7 @@ test_server_connectivity() {
     local remote_user="ubuntu"
 
     # Test SSH connectivity
+    log "Testing SSH connection to ${GPU_INSTANCE_IP}..."
     if timeout 10 ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "echo 'ssh_ok'" 2>/dev/null | grep -q "ssh_ok"; then
         add_validation_result "ssh_connectivity" "pass" "SSH connection successful" ""
     else
@@ -70,23 +71,23 @@ test_server_connectivity() {
         return 1
     fi
 
-    # Test container status
-    local container_test=$(cat << EOF
-#!/bin/bash
-if docker ps --filter name=${RIVA_CONTAINER_NAME} --format '{{.Status}}' | grep -q 'Up'; then
-    echo "container_running"
-    docker ps --filter name=${RIVA_CONTAINER_NAME} --format '{{.Status}}'
-else
-    echo "container_not_running"
-    docker ps --filter name=${RIVA_CONTAINER_NAME} || echo "Container not found"
-fi
-EOF
-    )
-
+    # Test container status with timeout
+    log "Testing container status..."
     local container_status
-    container_status=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$container_test")
+    container_status=$(timeout 15 ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "
+        if docker ps --filter name=${RIVA_CONTAINER_NAME} --format '{{.Status}}' | grep -q 'Up'; then
+            echo 'container_running'
+            docker ps --filter name=${RIVA_CONTAINER_NAME} --format '{{.Status}}'
+        else
+            echo 'container_not_running'
+            docker ps --filter name=${RIVA_CONTAINER_NAME} || echo 'Container not found'
+        fi
+    " 2>/dev/null || echo "ssh_timeout")
 
-    if echo "$container_status" | grep -q "container_running"; then
+    if echo "$container_status" | grep -q "ssh_timeout"; then
+        add_validation_result "container_status" "fail" "SSH timeout while checking container" ""
+        return 1
+    elif echo "$container_status" | grep -q "container_running"; then
         local uptime=$(echo "$container_status" | grep "Up" | head -1)
         add_validation_result "container_status" "pass" "Container running" "$uptime"
     else
