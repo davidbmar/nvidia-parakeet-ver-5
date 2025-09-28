@@ -376,26 +376,30 @@ ensure_tools_on_gpu() {
   local remote_user="ubuntu"
 
   begin_step "Ensure required tools on GPU host (awscli/ffmpeg/docker)"
-  ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" bash -lc '
-    set -euo pipefail
-    need_install=()
-    command -v aws >/dev/null 2>&1 || need_install+=("awscli")
-    command -v ffmpeg >/dev/null 2>&1 || need_install+=("ffmpeg")
-    if [[ ${#need_install[@]} -gt 0 ]]; then
-      if [[ "${ALLOW_PACKAGE_INSTALL:-0}" == "1" ]]; then
-        sudo apt-get update -y
-        for p in "${need_install[@]}"; do
-          case "$p" in
-            awscli) sudo apt-get install -y awscli ;;
-            ffmpeg) sudo apt-get install -y ffmpeg ;;
-          esac
-        done
-      else
-        echo "MISSING:${need_install[*]}"
-        exit 3
-      fi
-    fi
-  ' || {
+  local install_script=$(cat << 'EOF'
+#!/bin/bash
+set -euo pipefail
+need_install=()
+command -v aws >/dev/null 2>&1 || need_install+=("awscli")
+command -v ffmpeg >/dev/null 2>&1 || need_install+=("ffmpeg")
+if [[ ${#need_install[@]} -gt 0 ]]; then
+  if [[ "${ALLOW_PACKAGE_INSTALL:-0}" == "1" ]]; then
+    sudo apt-get update -y
+    for p in "${need_install[@]}"; do
+      case "$p" in
+        awscli) sudo apt-get install -y awscli ;;
+        ffmpeg) sudo apt-get install -y ffmpeg ;;
+      esac
+    done
+  else
+    echo "MISSING:${need_install[*]}"
+    exit 3
+  fi
+fi
+EOF
+  )
+
+  ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "ALLOW_PACKAGE_INSTALL='${ALLOW_PACKAGE_INSTALL}' bash -s" <<< "$install_script" || {
     add_validation_result "host_tooling" "fail" "Missing required tooling and installs not allowed" ""
     end_step; return 1
   }
