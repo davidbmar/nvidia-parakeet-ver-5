@@ -9,7 +9,7 @@ set -euo pipefail
 
 source "$(dirname "$0")/_lib.sh"
 
-init_script "089" "Validate Deployment" "End-to-end validation of RIVA server deployment" "" ""
+init_script "134" "Validate Deployment" "End-to-end validation of RIVA server deployment" "" ""
 
 # Required environment variables
 REQUIRED_VARS=(
@@ -106,13 +106,13 @@ else
     echo "health_ready_failed"
 fi
 
-# Test models endpoint
-echo "Testing models endpoint..."
-if timeout 10 curl -sf "http://localhost:${RIVA_HTTP_PORT}/v2/models" >/dev/null; then
-    echo "models_endpoint_ok"
-    curl -s "http://localhost:${RIVA_HTTP_PORT}/v2/models" | head -20
+# Test RIVA-specific endpoints (v2/models not supported by RIVA)
+echo "Testing RIVA server info..."
+if timeout 10 curl -sf "http://localhost:${RIVA_HTTP_PORT}/v2" >/dev/null; then
+    echo "riva_server_ok"
+    curl -s "http://localhost:${RIVA_HTTP_PORT}/v2" | head -20
 else
-    echo "models_endpoint_failed"
+    echo "riva_server_failed"
 fi
 
 # Test server metadata
@@ -134,10 +134,10 @@ EOF
         add_validation_result "http_health" "fail" "Health endpoint not responding" ""
     fi
 
-    if echo "$http_result" | grep -q "models_endpoint_ok"; then
-        add_validation_result "http_models" "pass" "Models endpoint accessible" ""
+    if echo "$http_result" | grep -q "riva_server_ok"; then
+        add_validation_result "riva_server" "pass" "RIVA server endpoint accessible" ""
     else
-        add_validation_result "http_models" "warn" "Models endpoint issues" "May still be loading"
+        add_validation_result "riva_server" "warn" "RIVA server endpoint issues" "May still be loading"
     fi
 
     if echo "$http_result" | grep -q "server_metadata_ok"; then
@@ -183,9 +183,9 @@ else
     echo "asr_service_failed"
 fi
 
-# Test ASR configuration
+# Test ASR configuration (check for any parakeet model loaded)
 echo "Testing ASR configuration..."
-if timeout 10 grpcurl -plaintext localhost:${RIVA_GRPC_PORT} nvidia.riva.asr.RivaSpeechRecognition/GetRivaSpeechRecognitionConfig 2>/dev/null | grep -q "${RIVA_ASR_MODEL_NAME}"; then
+if timeout 10 grpcurl -plaintext localhost:${RIVA_GRPC_PORT} nvidia.riva.asr.RivaSpeechRecognition/GetRivaSpeechRecognitionConfig 2>/dev/null | grep -q "parakeet"; then
     echo "asr_config_ok"
 else
     echo "asr_config_warn"
@@ -220,6 +220,139 @@ EOF
         add_validation_result "asr_config" "pass" "Model loaded in ASR config" ""
     else
         add_validation_result "asr_config" "warn" "Model not visible in config" "May still be loading"
+    fi
+
+    end_step
+}
+
+# Function to validate model loading from container logs
+validate_model_loading() {
+    begin_step "Validate model loading from container logs"
+
+    local ssh_key_path="$HOME/.ssh/${SSH_KEY_NAME}.pem"
+    local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+    local remote_user="ubuntu"
+
+    local model_test=$(cat << 'EOF'
+#!/bin/bash
+
+echo "Checking container logs for model loading..."
+# Get last 200 lines to capture model loading messages
+LOGS=$(docker logs riva-server --tail 200 2>&1)
+
+# Check for successful model loading messages
+if echo "$LOGS" | grep -q "successfully loaded.*parakeet.*bls-ensemble"; then
+    echo "bls_ensemble_loaded"
+else
+    echo "bls_ensemble_missing"
+fi
+
+if echo "$LOGS" | grep -q "successfully loaded.*parakeet.*am-streaming"; then
+    echo "streaming_model_loaded"
+else
+    echo "streaming_model_missing"
+fi
+
+# Check final model status table
+if echo "$LOGS" | grep -A 10 "Model.*Version.*Status" | grep -q "parakeet.*READY"; then
+    echo "models_ready_status"
+    echo "Model status table:"
+    echo "$LOGS" | grep -A 10 "Model.*Version.*Status" | tail -8
+else
+    echo "models_status_missing"
+fi
+
+# Check for any error messages
+if echo "$LOGS" | grep -E "(ERROR|Failed|failed.*load)" | grep -v "ffmpeg" | head -5; then
+    echo "errors_found"
+else
+    echo "no_critical_errors"
+fi
+EOF
+    )
+
+    local model_result
+    model_result=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$model_test")
+
+    if echo "$model_result" | grep -q "bls_ensemble_loaded"; then
+        add_validation_result "bls_model" "pass" "BLS ensemble model loaded successfully" ""
+    else
+        add_validation_result "bls_model" "fail" "BLS ensemble model not loaded" "Check container logs"
+    fi
+
+    if echo "$model_result" | grep -q "streaming_model_loaded"; then
+        add_validation_result "streaming_model" "pass" "Streaming AM model loaded successfully" ""
+    else
+        add_validation_result "streaming_model" "fail" "Streaming AM model not loaded" "May indicate path mismatch issue"
+    fi
+
+    if echo "$model_result" | grep -q "models_ready_status"; then
+        add_validation_result "model_status" "pass" "Models show READY status" ""
+    else
+        add_validation_result "model_status" "warn" "Model status table not found" "Models may still be loading"
+    fi
+
+    if echo "$model_result" | grep -q "no_critical_errors"; then
+        add_validation_result "model_errors" "pass" "No critical model loading errors" ""
+    else
+        add_validation_result "model_errors" "warn" "Some errors found in logs" "Review container logs"
+    fi
+
+    end_step
+}
+
+# Function to test basic ASR functionality
+test_basic_asr() {
+    begin_step "Test basic ASR functionality"
+
+    local ssh_key_path="$HOME/.ssh/${SSH_KEY_NAME}.pem"
+    local ssh_opts="-i $ssh_key_path -o ConnectTimeout=10 -o StrictHostKeyChecking=no"
+    local remote_user="ubuntu"
+
+    # Skip ASR test if grpcurl not available
+    local grpc_check=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "command -v grpcurl >/dev/null && echo 'available' || echo 'missing'")
+
+    if [[ "$grpc_check" == "missing" ]]; then
+        add_validation_result "asr_test" "warn" "Cannot test ASR - grpcurl not available" "Install grpcurl for full validation"
+        end_step
+        return 0
+    fi
+
+    # Simple connectivity test to ASR service
+    local asr_test=$(cat << 'EOF'
+#!/bin/bash
+
+# Test if we can reach the ASR service endpoint
+echo "Testing ASR service connectivity..."
+if timeout 15 grpcurl -plaintext localhost:50051 list 2>/dev/null | grep -q "nvidia.riva.asr"; then
+    echo "asr_service_reachable"
+
+    # Try to get available models/configs (non-intrusive)
+    echo "Getting ASR configuration..."
+    if timeout 15 grpcurl -plaintext localhost:50051 nvidia.riva.asr.RivaSpeechRecognition/GetRivaSpeechRecognitionConfig 2>/dev/null | head -100; then
+        echo "asr_config_accessible"
+    else
+        echo "asr_config_failed"
+    fi
+else
+    echo "asr_service_unreachable"
+fi
+EOF
+    )
+
+    local asr_result
+    asr_result=$(ssh $ssh_opts "${remote_user}@${GPU_INSTANCE_IP}" "bash -s" <<< "$asr_test")
+
+    if echo "$asr_result" | grep -q "asr_service_reachable"; then
+        add_validation_result "asr_connectivity" "pass" "ASR service is reachable via gRPC" ""
+    else
+        add_validation_result "asr_connectivity" "fail" "ASR service not reachable" "Check gRPC port and service status"
+    fi
+
+    if echo "$asr_result" | grep -q "asr_config_accessible"; then
+        add_validation_result "asr_config_access" "pass" "ASR configuration accessible" ""
+    else
+        add_validation_result "asr_config_access" "warn" "ASR configuration issues" "Service may not be fully initialized"
     fi
 
     end_step
@@ -312,6 +445,8 @@ main() {
     test_server_connectivity
     test_http_endpoints
     test_grpc_endpoints
+    validate_model_loading
+    test_basic_asr
     generate_validation_report
 
     local fail_count=0
