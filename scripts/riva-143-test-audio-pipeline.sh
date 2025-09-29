@@ -637,7 +637,9 @@ main() {
     start_step "create_pipeline_test"
     # create_pipeline_test  # Commented out due to heredoc syntax issue - file created manually
     log_info "🔄 End-to-end pipeline test script already exists"
-    cd "$(dirname "$0")/.."  # Change to project root
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    cd "$PROJECT_ROOT"  # Change to project root
     if [[ -f "scripts/test-audio-pipeline-e2e.sh" ]]; then
         log_success "End-to-end pipeline test created"
     else
