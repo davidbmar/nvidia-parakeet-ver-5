@@ -142,7 +142,11 @@ class RivaWebSocketBridge:
         log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
         logging.basicConfig(
             level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('/tmp/websocket_bridge.log'),
+                logging.StreamHandler()
+            ]
         )
 
         logger.info(f"WebSocket bridge initialized for {self.config.host}:{self.config.port}")
@@ -158,8 +162,11 @@ class RivaWebSocketBridge:
                 ssl_context = self._create_ssl_context()
 
             # Start WebSocket server
+            async def connection_handler(websocket):
+                await self.handle_connection(websocket, websocket.request.path)
+
             self.server = await websockets.serve(
-                self.handle_connection,
+                connection_handler,
                 self.config.host,
                 self.config.port,
                 ssl=ssl_context,
@@ -193,10 +200,14 @@ class RivaWebSocketBridge:
 
     async def handle_connection(self, websocket: WebSocketServerProtocol, path: str):
         """Handle incoming WebSocket connection"""
+        logger.info(f"NEW CONNECTION: Remote address: {websocket.remote_address}, Path: {path}")
+
         connection_id = await self.connection_manager.add_connection(websocket)
+        logger.info(f"DEBUG: Connection {connection_id} added successfully")
 
         try:
             # Send initial connection acknowledgment
+            logger.info(f"DEBUG: Sending initial connection message to {connection_id}")
             await self._send_message(websocket, {
                 'type': 'connection',
                 'connection_id': connection_id,
@@ -208,17 +219,25 @@ class RivaWebSocketBridge:
                 },
                 'timestamp': datetime.utcnow().isoformat()
             })
+            logger.info(f"DEBUG: Initial message sent successfully to {connection_id}")
 
             # Handle messages from client
+            logger.info(f"DEBUG: Starting message loop for {connection_id}")
             async for message in websocket:
+                logger.info(f"DEBUG: Received message from {connection_id}, type: {type(message)}, length: {len(message) if hasattr(message, '__len__') else 'N/A'}")
                 await self._handle_message(connection_id, message)
 
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Connection {connection_id} closed by client")
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"Connection {connection_id} closed by client: code={e.code}, reason={e.reason}")
         except Exception as e:
-            logger.error(f"Error handling connection {connection_id}: {e}")
-            await self._send_error(websocket, f"Connection error: {e}")
+            logger.error(f"ERROR handling connection {connection_id}: {type(e).__name__}: {e}")
+            logger.error(f"DEBUG: Exception details: {repr(e)}")
+            try:
+                await self._send_error(websocket, f"Connection error: {e}")
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
         finally:
+            logger.info(f"DEBUG: Cleaning up connection {connection_id}")
             await self.connection_manager.remove_connection(connection_id)
 
     async def _handle_message(self, connection_id: str, message):

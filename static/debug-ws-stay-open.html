@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Stay-Open Test</title>
+</head>
+<body>
+    <h1>WebSocket Stay-Open Test</h1>
+    <button onclick="testConnection()">Test WebSocket Connection (Stay Open)</button>
+    <div id="output" style="font-family: monospace; margin-top: 20px; white-space: pre-wrap;"></div>
+
+    <script>
+        let ws = null;
+
+        function log(message) {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toISOString();
+            output.textContent += `[${timestamp}] ${message}\n`;
+        }
+
+        function testConnection() {
+            log('Starting WebSocket connection test...');
+
+            const url = 'wss://3.16.124.227:8443/';
+            log(`Connecting to: ${url}`);
+
+            try {
+                ws = new WebSocket(url);
+
+                ws.onopen = function(event) {
+                    log('✅ CONNECTION SUCCESSFUL!');
+                    log('WebSocket is now OPEN and ready to receive messages');
+                    log('Waiting for server messages...');
+                };
+
+                ws.onmessage = function(event) {
+                    log('📨 RECEIVED MESSAGE: ' + event.data);
+                    try {
+                        const data = JSON.parse(event.data);
+                        log('📊 Parsed message: ' + JSON.stringify(data, null, 2));
+                    } catch (e) {
+                        log('Raw message (not JSON): ' + event.data);
+                    }
+                };
+
+                ws.onerror = function(error) {
+                    log('❌ CONNECTION ERROR!');
+                    log('Error: ' + JSON.stringify(error, null, 2));
+                };
+
+                ws.onclose = function(event) {
+                    log('Connection closed');
+                    log('Close code: ' + event.code);
+                    log('Close reason: ' + event.reason);
+                    log('Was clean: ' + event.wasClean);
+                };
+
+            } catch (e) {
+                log('❌ EXCEPTION THROWN!');
+                log('Exception: ' + e.message);
+            }
+        }
+
+        function closeConnection() {
+            if (ws) {
+                ws.close();
+                log('Manually closed connection');
+            }
+        }
+    </script>
+    <button onclick="closeConnection()">Close Connection</button>
+</body>
+</html>
