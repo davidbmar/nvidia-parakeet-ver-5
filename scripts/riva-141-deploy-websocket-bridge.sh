@@ -321,7 +321,7 @@ fi
 
 echo "   Server URL: ${WS_PROTOCOL}://${WS_HOST}:${WS_PORT}/"
 echo "   Riva Target: ${RIVA_HOST}:${RIVA_PORT}"
-echo "   Audio Config: ${WS_SAMPLE_RATE}Hz, ${WS_CHANNELS}ch, ${WS_FRAME_MS}ms frames"
+echo "   Audio Config: ${AUDIO_SAMPLE_RATE:-16000}Hz, ${AUDIO_CHANNELS:-1}ch, ${WS_FRAME_MS:-20}ms frames"
 
 if [[ "${CONNECTION_TEST_PASSED}" == "true" ]]; then
     echo "   Status: ✅ Ready for service installation"
