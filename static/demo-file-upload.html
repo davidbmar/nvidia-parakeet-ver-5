@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Riva ASR File Upload Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        button { padding: 15px 25px; margin: 10px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; }
+        .connect { background: #4CAF50; color: white; }
+        .disconnect { background: #f44336; color: white; }
+        .upload { background: #2196F3; color: white; }
+        .clear { background: #9E9E9E; color: white; }
+        #status { padding: 15px; margin: 15px 0; border-radius: 5px; font-weight: bold; }
+        .status-connected { background: #d4edda; color: #155724; }
+        .status-disconnected { background: #f8d7da; color: #721c24; }
+        #output { background: #f8f9fa; padding: 20px; border-radius: 5px; min-height: 200px; font-family: monospace; }
+        .transcript { padding: 10px; margin: 5px 0; background: white; border-radius: 4px; }
+        .final { border-left: 3px solid #4CAF50; font-weight: bold; }
+        .error { color: red; }
+        .log { color: #666; font-size: 12px; }
+        .upload-area { border: 2px dashed #ccc; padding: 20px; margin: 20px 0; text-align: center; border-radius: 5px; }
+        .upload-area.dragover { border-color: #4CAF50; background: #f0fff0; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Riva ASR File Upload Demo</h1>
+    <p>Test ASR without microphone by uploading audio files!</p>
+
+    <div>
+        <label>WebSocket URL:</label>
+        <input type="text" id="wsUrl" value="wss://3.16.124.227:8443/" style="width: 300px; padding: 8px;">
+    </div>
+
+    <div style="margin: 20px 0;">
+        <button id="connectBtn" class="connect">Connect</button>
+        <button id="disconnectBtn" class="disconnect" disabled>Disconnect</button>
+        <div id="status" class="status-disconnected">Disconnected</div>
+    </div>
+
+    <div class="upload-area" id="uploadArea">
+        <p><strong>Upload Audio File</strong></p>
+        <p>Drag & drop audio file here or click to select</p>
+        <input type="file" id="fileInput" accept="audio/*" style="display: none;">
+        <button id="uploadBtn" class="upload" disabled>Select Audio File</button>
+        <p><small>Supported: WAV, MP3, M4A, etc.</small></p>
+    </div>
+
+    <div style="margin: 20px 0;">
+        <button id="clearBtn" class="clear">Clear</button>
+    </div>
+
+    <div id="output"></div>
+
+    <script>
+        let ws = null;
+        let audioContext = null;
+
+        const elements = {
+            wsUrl: document.getElementById('wsUrl'),
+            connectBtn: document.getElementById('connectBtn'),
+            disconnectBtn: document.getElementById('disconnectBtn'),
+            uploadBtn: document.getElementById('uploadBtn'),
+            fileInput: document.getElementById('fileInput'),
+            uploadArea: document.getElementById('uploadArea'),
+            clearBtn: document.getElementById('clearBtn'),
+            status: document.getElementById('status'),
+            output: document.getElementById('output')
+        };
+
+        function log(message, type = 'log') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            elements.output.appendChild(div);
+            elements.output.scrollTop = elements.output.scrollHeight;
+        }
+
+        function addTranscript(text) {
+            const div = document.createElement('div');
+            div.className = 'transcript final';
+            div.textContent = `✓ ${text}`;
+            elements.output.appendChild(div);
+            elements.output.scrollTop = elements.output.scrollHeight;
+        }
+
+        async function connect() {
+            try {
+                const url = elements.wsUrl.value;
+                log(`Connecting to ${url}...`);
+
+                ws = new WebSocket(url);
+
+                ws.onopen = () => {
+                    log('✅ WebSocket connected!');
+                    elements.status.textContent = 'Connected';
+                    elements.status.className = 'status-connected';
+                    elements.connectBtn.disabled = true;
+                    elements.disconnectBtn.disabled = false;
+                    elements.uploadBtn.disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        log(`Received: ${data.type}`);
+
+                        if (data.type === 'connection') {
+                            log(`Connection ID: ${data.connection_id}`);
+                        } else if (data.type === 'transcription') {
+                            addTranscript(data.text);
+                            log(`📝 Transcription: "${data.text}"`);
+                        } else if (data.type === 'partial') {
+                            log(`⚪ Partial: "${data.text}"`);
+                        } else if (data.type === 'error') {
+                            log(`Error: ${data.message}`, 'error');
+                        } else if (data.type === 'session_started') {
+                            log('🚀 Transcription session started');
+                        } else if (data.type === 'session_stopped') {
+                            log('⏹️ Transcription session stopped');
+                        }
+                    } catch (e) {
+                        log(`Failed to parse message: ${e.message}`, 'error');
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    log(`WebSocket error: ${error.message || 'Unknown error'}`, 'error');
+                };
+
+                ws.onclose = (event) => {
+                    log(`WebSocket closed: Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
+                    disconnect();
+                };
+
+            } catch (error) {
+                log(`Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            elements.status.textContent = 'Disconnected';
+            elements.status.className = 'status-disconnected';
+            elements.connectBtn.disabled = false;
+            elements.disconnectBtn.disabled = true;
+            elements.uploadBtn.disabled = true;
+        }
+
+        async function processAudioFile(file) {
+            try {
+                log(`📁 Processing file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                // Read file as array buffer
+                const arrayBuffer = await file.arrayBuffer();
+                log('📖 File read successfully');
+
+                // Decode audio
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                log(`🎵 Audio decoded: ${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels} channels`);
+
+                // Convert to mono 16kHz (required by Riva)
+                const targetSampleRate = 16000;
+                const mono = audioBuffer.numberOfChannels > 1 ?
+                    audioBuffer.getChannelData(0) : audioBuffer.getChannelData(0);
+
+                // Resample to 16kHz if needed
+                let resampledData;
+                if (audioBuffer.sampleRate !== targetSampleRate) {
+                    resampledData = resample(mono, audioBuffer.sampleRate, targetSampleRate);
+                    log(`🔄 Resampled from ${audioBuffer.sampleRate}Hz to ${targetSampleRate}Hz`);
+                } else {
+                    resampledData = mono;
+                }
+
+                // Convert to 16-bit PCM
+                const pcmData = new Int16Array(resampledData.length);
+                for (let i = 0; i < resampledData.length; i++) {
+                    const s = Math.max(-1, Math.min(1, resampledData[i]));
+                    pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                log(`🔢 Converted to PCM: ${pcmData.length} samples`);
+
+                // Send to Riva for transcription
+                await sendAudioToRiva(pcmData);
+
+            } catch (error) {
+                log(`Failed to process audio: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendAudioToRiva(pcmData) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected', 'error');
+                return;
+            }
+
+            try {
+                // Start transcription session
+                ws.send(JSON.stringify({
+                    type: 'start_transcription',
+                    config: {
+                        sampleRate: 16000,
+                        encoding: 'LINEAR16',
+                        language: 'en-US',
+                        enableAutomaticPunctuation: true
+                    }
+                }));
+
+                log('🚀 Starting transcription...');
+
+                // Send audio data in chunks (simulate streaming)
+                const chunkSize = 1600; // 100ms at 16kHz
+                for (let i = 0; i < pcmData.length; i += chunkSize) {
+                    const chunk = pcmData.slice(i, i + chunkSize);
+
+                    ws.send(JSON.stringify({
+                        type: 'audio',
+                        audio: Array.from(chunk)
+                    }));
+
+                    // Small delay to simulate real-time streaming
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+
+                log('📤 Audio data sent, waiting for transcription...');
+
+                // Stop transcription session
+                setTimeout(() => {
+                    ws.send(JSON.stringify({ type: 'stop_transcription' }));
+                    log('⏹️ Transcription session ended');
+                }, 1000);
+
+            } catch (error) {
+                log(`Failed to send audio to Riva: ${error.message}`, 'error');
+            }
+        }
+
+        // Simple resampling function
+        function resample(inputData, inputSampleRate, outputSampleRate) {
+            const ratio = inputSampleRate / outputSampleRate;
+            const outputLength = Math.floor(inputData.length / ratio);
+            const output = new Float32Array(outputLength);
+
+            for (let i = 0; i < outputLength; i++) {
+                const srcIndex = i * ratio;
+                const srcIndexFloor = Math.floor(srcIndex);
+                const srcIndexCeil = Math.min(srcIndexFloor + 1, inputData.length - 1);
+                const fraction = srcIndex - srcIndexFloor;
+
+                output[i] = inputData[srcIndexFloor] * (1 - fraction) + inputData[srcIndexCeil] * fraction;
+            }
+
+            return output;
+        }
+
+        function clearOutput() {
+            elements.output.innerHTML = '';
+            log('Ready to connect. Upload audio files to test ASR!');
+        }
+
+        // Event listeners
+        elements.connectBtn.addEventListener('click', connect);
+        elements.disconnectBtn.addEventListener('click', disconnect);
+        elements.clearBtn.addEventListener('click', clearOutput);
+
+        // File upload handling
+        elements.uploadBtn.addEventListener('click', () => {
+            elements.fileInput.click();
+        });
+
+        elements.fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                processAudioFile(file);
+            }
+        });
+
+        // Drag and drop
+        elements.uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            elements.uploadArea.classList.add('dragover');
+        });
+
+        elements.uploadArea.addEventListener('dragleave', () => {
+            elements.uploadArea.classList.remove('dragover');
+        });
+
+        elements.uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            elements.uploadArea.classList.remove('dragover');
+
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('audio/')) {
+                processAudioFile(file);
+            } else {
+                log('Please drop an audio file', 'error');
+            }
+        });
+
+        elements.uploadArea.addEventListener('click', () => {
+            if (!elements.uploadBtn.disabled) {
+                elements.fileInput.click();
+            }
+        });
+
+        // Initial log
+        clearOutput();
+    </script>
+</body>
+</html>
