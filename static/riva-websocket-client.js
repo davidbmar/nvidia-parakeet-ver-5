@@ -256,8 +256,34 @@ class RivaWebSocketClient {
         try {
             console.log('Initializing audio capture...');
 
+            // Check for getUserMedia support with fallbacks
+            let getUserMedia = null;
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                getUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+            } else if (navigator.getUserMedia) {
+                getUserMedia = (constraints) => {
+                    return new Promise((resolve, reject) => {
+                        navigator.getUserMedia(constraints, resolve, reject);
+                    });
+                };
+            } else if (navigator.webkitGetUserMedia) {
+                getUserMedia = (constraints) => {
+                    return new Promise((resolve, reject) => {
+                        navigator.webkitGetUserMedia(constraints, resolve, reject);
+                    });
+                };
+            } else if (navigator.mozGetUserMedia) {
+                getUserMedia = (constraints) => {
+                    return new Promise((resolve, reject) => {
+                        navigator.mozGetUserMedia(constraints, resolve, reject);
+                    });
+                };
+            } else {
+                throw new Error('getUserMedia is not supported in this browser. Please use HTTPS or a modern browser.');
+            }
+
             // Request microphone access
-            this.mediaStream = await navigator.mediaDevices.getUserMedia(this.audioConfig.constraints);
+            this.mediaStream = await getUserMedia(this.audioConfig.constraints);
 
             // Create audio context
             this.audioContext = new (window.AudioContext || window.webkitAudioContext)({

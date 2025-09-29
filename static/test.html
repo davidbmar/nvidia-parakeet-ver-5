@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .test-result { margin: 10px 0; padding: 10px; border-radius: 5px; }
+        .pass { background-color: #d4edda; color: #155724; }
+        .fail { background-color: #f8d7da; color: #721c24; }
+        .warn { background-color: #fff3cd; color: #856404; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        #log { background: #f8f9fa; padding: 15px; border-radius: 5px; height: 300px; overflow-y: auto; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Bridge Test</h1>
+    <div id="status">Initializing...</div>
+
+    <div>
+        <button onclick="testConnection()">Test Connection</button>
+        <button onclick="testMicrophone()">Test Microphone</button>
+        <button onclick="testFullWorkflow()">Test Full Workflow</button>
+        <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <div id="log"></div>
+
+    <script>
+        const serverUrl = window.location.protocol === 'https:' ? 'wss:' : 'ws:' + '//' + window.location.host + '/';
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.innerHTML = `[${timestamp}] [${type.toUpperCase()}] ${message}`;
+            entry.style.color = type === 'error' ? '#dc3545' : type === 'warn' ? '#ffc107' : '#28a745';
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function updateStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="test-result ${type}">${message}</div>`;
+        }
+
+        async function testConnection() {
+            log('Testing WebSocket connection...');
+            updateStatus('Testing connection...', 'warn');
+
+            try {
+                const ws = new WebSocket(serverUrl);
+
+                ws.onopen = () => {
+                    log('WebSocket connection opened');
+                };
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    log(`Received: ${data.type}`);
+
+                    if (data.type === 'connection') {
+                        log(`Connection ID: ${data.connection_id}`);
+                        updateStatus('✅ WebSocket connection successful', 'pass');
+                        ws.close();
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    log('WebSocket error: ' + error, 'error');
+                    updateStatus('❌ WebSocket connection failed', 'fail');
+                };
+
+                ws.onclose = (event) => {
+                    log(`WebSocket closed: ${event.code} ${event.reason}`);
+                };
+
+            } catch (error) {
+                log('Connection test failed: ' + error, 'error');
+                updateStatus('❌ Connection test failed', 'fail');
+            }
+        }
+
+        async function testMicrophone() {
+            log('Testing microphone access...');
+            updateStatus('Testing microphone...', 'warn');
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: { ideal: 16000 },
+                        channelCount: { ideal: 1 }
+                    }
+                });
+
+                log('Microphone access granted');
+
+                // Test AudioContext
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                log(`Audio context sample rate: ${audioContext.sampleRate}Hz`);
+
+                // Test AudioWorklet support
+                if ('audioWorklet' in audioContext) {
+                    log('AudioWorklet supported');
+                    updateStatus('✅ Microphone and AudioWorklet available', 'pass');
+                } else {
+                    log('AudioWorklet not supported', 'warn');
+                    updateStatus('⚠️ Microphone available but AudioWorklet not supported', 'warn');
+                }
+
+                // Clean up
+                stream.getTracks().forEach(track => track.stop());
+                await audioContext.close();
+
+            } catch (error) {
+                log('Microphone test failed: ' + error, 'error');
+                updateStatus('❌ Microphone access failed', 'fail');
+            }
+        }
+
+        async function testFullWorkflow() {
+            log('Testing full workflow...');
+            updateStatus('Testing full workflow...', 'warn');
+
+            // This would require the full client implementation
+            log('Full workflow test requires complete client implementation');
+            updateStatus('⚠️ Full workflow test not implemented in this simple test', 'warn');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Browser test page loaded');
+            log(`Server URL: ${serverUrl}`);
+            updateStatus('Ready for testing', 'info');
+        });
+    </script>
+</body>
+</html>

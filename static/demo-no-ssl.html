@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Riva ASR WebSocket Demo (No SSL)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-connect { background: #4CAF50; color: white; }
+        .btn-disconnect { background: #f44336; color: white; }
+        .btn-start { background: #2196F3; color: white; }
+        .btn-stop { background: #FF9800; color: white; }
+        #status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status-connected { background: #d4edda; color: #155724; }
+        .status-disconnected { background: #f8d7da; color: #721c24; }
+        #transcripts {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            min-height: 100px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .transcript-item {
+            padding: 8px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 4px;
+            border-left: 3px solid #2196F3;
+        }
+        .transcript-final {
+            border-left-color: #4CAF50;
+            font-weight: bold;
+        }
+        #logs {
+            font-family: monospace;
+            font-size: 12px;
+            background: #263238;
+            color: #aed581;
+            padding: 10px;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+        }
+        .log-error { color: #ef5350; }
+        .log-info { color: #64b5f6; }
+    </style>
+</head>
+<body>
+    <h1>🎤 Riva ASR WebSocket Demo (No SSL)</h1>
+
+    <div class="container">
+        <h2>Connection Settings</h2>
+        <input type="text" id="serverUrl" value="ws://3.16.124.227:8765/" style="width: 300px; padding: 8px;">
+        <button id="connectBtn" class="btn-connect">Connect</button>
+        <button id="disconnectBtn" class="btn-disconnect" disabled>Disconnect</button>
+        <div id="status" class="status-disconnected">Disconnected</div>
+    </div>
+
+    <div class="container">
+        <h2>Transcription Control</h2>
+        <button id="startBtn" class="btn-start" disabled>Start Recording</button>
+        <button id="stopBtn" class="btn-stop" disabled>Stop Recording</button>
+        <button id="clearBtn" style="background: #9E9E9E; color: white;">Clear Transcripts</button>
+    </div>
+
+    <div class="container">
+        <h2>Transcription Results</h2>
+        <div id="transcripts"></div>
+    </div>
+
+    <div class="container">
+        <h2>Debug Logs</h2>
+        <div id="logs"></div>
+    </div>
+
+    <script>
+        class ASRClient {
+            constructor() {
+                this.ws = null;
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioContext = null;
+
+                // UI Elements
+                this.connectBtn = document.getElementById('connectBtn');
+                this.disconnectBtn = document.getElementById('disconnectBtn');
+                this.startBtn = document.getElementById('startBtn');
+                this.stopBtn = document.getElementById('stopBtn');
+                this.clearBtn = document.getElementById('clearBtn');
+                this.serverUrl = document.getElementById('serverUrl');
+                this.status = document.getElementById('status');
+                this.transcripts = document.getElementById('transcripts');
+                this.logs = document.getElementById('logs');
+
+                // Event Listeners
+                this.connectBtn.addEventListener('click', () => this.connect());
+                this.disconnectBtn.addEventListener('click', () => this.disconnect());
+                this.startBtn.addEventListener('click', () => this.startRecording());
+                this.stopBtn.addEventListener('click', () => this.stopRecording());
+                this.clearBtn.addEventListener('click', () => this.clearTranscripts());
+            }
+
+            log(message, type = 'info') {
+                const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+                const logEntry = document.createElement('div');
+                logEntry.className = `log-${type}`;
+                logEntry.textContent = `[${timestamp}] ${message}`;
+                this.logs.appendChild(logEntry);
+                this.logs.scrollTop = this.logs.scrollHeight;
+            }
+
+            connect() {
+                const url = this.serverUrl.value;
+                this.log(`Connecting to ${url}...`);
+
+                try {
+                    this.ws = new WebSocket(url);
+
+                    this.ws.onopen = () => {
+                        this.log('Connected successfully!');
+                        this.status.textContent = 'Connected';
+                        this.status.className = 'status-connected';
+                        this.connectBtn.disabled = true;
+                        this.disconnectBtn.disabled = false;
+                        this.startBtn.disabled = false;
+
+                        // Send initial configuration
+                        this.ws.send(JSON.stringify({
+                            type: 'config',
+                            config: {
+                                sampleRate: 16000,
+                                encoding: 'LINEAR16',
+                                language: 'en-US',
+                                enableAutomaticPunctuation: true,
+                                enableWordTimeOffsets: false
+                            }
+                        }));
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (e) {
+                            this.log(`Failed to parse message: ${e.message}`, 'error');
+                        }
+                    };
+
+                    this.ws.onerror = (error) => {
+                        this.log(`WebSocket error: ${error.message || 'Unknown error'}`, 'error');
+                    };
+
+                    this.ws.onclose = (event) => {
+                        this.log(`Connection closed: Code ${event.code}, Reason: ${event.reason || 'No reason'}`);
+                        this.disconnect();
+                    };
+
+                } catch (error) {
+                    this.log(`Failed to connect: ${error.message}`, 'error');
+                    alert('Failed to connect: ' + error.message);
+                }
+            }
+
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+
+                this.stopRecording();
+                this.status.textContent = 'Disconnected';
+                this.status.className = 'status-disconnected';
+                this.connectBtn.disabled = false;
+                this.disconnectBtn.disabled = true;
+                this.startBtn.disabled = true;
+                this.stopBtn.disabled = true;
+            }
+
+            handleMessage(data) {
+                this.log(`Received: ${data.type}`);
+
+                switch(data.type) {
+                    case 'transcription':
+                        this.addTranscript(data.text, data.isFinal);
+                        break;
+                    case 'partial':
+                        this.addTranscript(data.text, false);
+                        break;
+                    case 'error':
+                        this.log(`Server error: ${data.message}`, 'error');
+                        break;
+                    case 'session_started':
+                        this.log('Transcription session started');
+                        break;
+                    case 'session_stopped':
+                        this.log('Transcription session stopped');
+                        break;
+                }
+            }
+
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true
+                        }
+                    });
+
+                    this.audioContext = new AudioContext();
+                    const source = this.audioContext.createMediaStreamSource(stream);
+                    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+
+                    processor.onaudioprocess = (e) => {
+                        if (this.isRecording && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                            const inputData = e.inputBuffer.getChannelData(0);
+                            const outputData = new Int16Array(inputData.length);
+
+                            // Convert float32 to int16
+                            for (let i = 0; i < inputData.length; i++) {
+                                const s = Math.max(-1, Math.min(1, inputData[i]));
+                                outputData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                            }
+
+                            // Send audio data
+                            this.ws.send(JSON.stringify({
+                                type: 'audio',
+                                audio: Array.from(outputData)
+                            }));
+                        }
+                    };
+
+                    source.connect(processor);
+                    processor.connect(this.audioContext.destination);
+
+                    // Send start command
+                    this.ws.send(JSON.stringify({ type: 'start_transcription' }));
+
+                    this.isRecording = true;
+                    this.startBtn.disabled = true;
+                    this.stopBtn.disabled = false;
+                    this.log('Recording started');
+
+                } catch (error) {
+                    this.log(`Failed to start recording: ${error.message}`, 'error');
+                    alert('Failed to access microphone: ' + error.message);
+                }
+            }
+
+            stopRecording() {
+                if (this.isRecording) {
+                    this.isRecording = false;
+
+                    if (this.audioContext) {
+                        this.audioContext.close();
+                        this.audioContext = null;
+                    }
+
+                    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                        this.ws.send(JSON.stringify({ type: 'stop_transcription' }));
+                    }
+
+                    this.startBtn.disabled = false;
+                    this.stopBtn.disabled = true;
+                    this.log('Recording stopped');
+                }
+            }
+
+            addTranscript(text, isFinal) {
+                const item = document.createElement('div');
+                item.className = isFinal ? 'transcript-item transcript-final' : 'transcript-item';
+                item.textContent = `${isFinal ? '✓' : '...'} ${text}`;
+                this.transcripts.appendChild(item);
+                this.transcripts.scrollTop = this.transcripts.scrollHeight;
+            }
+
+            clearTranscripts() {
+                this.transcripts.innerHTML = '';
+                this.log('Transcripts cleared');
+            }
+        }
+
+        // Initialize client when page loads
+        const client = new ASRClient();
+    </script>
+</body>
+</html>
