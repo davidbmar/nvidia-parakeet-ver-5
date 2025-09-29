@@ -21,7 +21,7 @@ validate_prerequisites() {
     log_info "🔍 Validating prerequisites from riva-141"
 
     # Check integration validation
-    if ! python3 /opt/riva-ws/bin/validate_integration.py >/dev/null 2>&1; then
+    if ! python3 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py >/dev/null 2>&1; then
         log_error "Integration validation failed. Run riva-141 first"
         exit 1
     fi
@@ -312,7 +312,7 @@ EOF
 create_frame_validator() {
     log_info "🧪 Creating server-side frame validator"
 
-    cat > /opt/riva-ws/bin/frame_validator.py << 'EOF'
+    sudo tee /opt/riva/nvidia-parakeet-ver-6/frame_validator.py > /dev/null << 'EOF'
 #!/usr/bin/env python3
 """
 Audio Frame Validator
@@ -469,11 +469,12 @@ if __name__ == "__main__":
     exit(0 if result else 1)
 EOF
 
-    sudo chown riva-ws:riva-ws /opt/riva-ws/bin/frame_validator.py
-    sudo chmod 755 /opt/riva-ws/bin/frame_validator.py
+    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/frame_validator.py
+    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/frame_validator.py
 
-    # Test validator
-    if python3 /opt/riva-ws/bin/frame_validator.py; then
+    # Test validator using riva virtual environment
+    cd /opt/riva/nvidia-parakeet-ver-6
+    if sudo -u riva /opt/riva/venv/bin/python /opt/riva/nvidia-parakeet-ver-6/frame_validator.py; then
         log_success "Frame validator created and tested"
     else
         log_error "Frame validator test failed"
@@ -521,7 +522,7 @@ echo "🔄 End-to-End Audio Pipeline Test"
 echo "================================="
 
 # Prerequisites check
-if [[ ! -f "/opt/riva-ws/bin/riva_websocket_bridge.py" ]]; then
+if [[ ! -f "/opt/riva/nvidia-parakeet-ver-6/bin/riva_websocket_bridge.py" ]]; then
     echo "❌ WebSocket bridge not found"
     exit 1
 fi
@@ -535,10 +536,10 @@ echo "✅ Prerequisites check passed"
 
 # Start WebSocket bridge in background
 echo "🚀 Starting WebSocket bridge..."
-cd /opt/riva-ws
-sudo -u riva-ws timeout 120s bash -c "
+cd /opt/riva/nvidia-parakeet-ver-6
+sudo -u riva timeout 120s bash -c "
     source config/.env
-    export PYTHONPATH='/opt/riva-ws:$PYTHONPATH'
+    export PYTHONPATH='/opt/riva/nvidia-parakeet-ver-6:$PYTHONPATH'
     python3 bin/riva_websocket_bridge.py
 " &
 
@@ -648,7 +649,7 @@ main() {
     echo ""
     echo "🧪 Audio Pipeline Test Summary:"
     echo "  Test Page: static/test-audio-pipeline.html"
-    echo "  Frame Validator: /opt/riva-ws/bin/frame_validator.py"
+    echo "  Frame Validator: /opt/riva/nvidia-parakeet-ver-6/frame_validator.py"
     echo "  E2E Test: scripts/test-audio-pipeline-e2e.sh"
     echo ""
     echo "🚀 Run manual test:"
