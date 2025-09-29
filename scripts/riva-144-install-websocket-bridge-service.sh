@@ -241,12 +241,17 @@ fi
 
 # Check WebSocket handshake (if curl is available)
 if command -v curl >/dev/null 2>&1; then
-    RESPONSE=\$(timeout 5 curl -s -i -N \\
+    # Use https instead of wss for curl, and -k to ignore SSL cert issues
+    CURL_PROTOCOL="\${WS_PROTOCOL}"
+    if [[ "\$WS_PROTOCOL" == "wss" ]]; then
+        CURL_PROTOCOL="https"
+    fi
+    RESPONSE=\$(timeout 5 curl -k -s -i -N \\
         -H "Connection: Upgrade" \\
         -H "Upgrade: websocket" \\
         -H "Sec-WebSocket-Version: 13" \\
         -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \\
-        "\${WS_PROTOCOL}://\${WS_HOST}:\${WS_PORT}/" 2>/dev/null | head -1)
+        "\${CURL_PROTOCOL}://\${WS_HOST}:\${WS_PORT}/" 2>/dev/null | head -1)
 
     if echo "\$RESPONSE" | grep -q "101 Switching Protocols"; then
         echo "OK: WebSocket bridge is healthy"
