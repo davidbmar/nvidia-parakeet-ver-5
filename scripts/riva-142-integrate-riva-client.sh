@@ -346,7 +346,7 @@ test_bridge_startup() {
 create_integration_validation() {
     log_info "✅ Creating integration validation script"
 
-    cat > /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py << 'EOF'
+    cat > /opt/riva/nvidia-parakeet-ver-6/validate_integration.py << 'EOF'
 #!/usr/bin/env python3
 """
 Integration Validation Script
@@ -419,12 +419,12 @@ if __name__ == "__main__":
     sys.exit(0 if result else 1)
 EOF
 
-    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py
-    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py
+    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/validate_integration.py
+    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/validate_integration.py
 
     # Run validation
     cd "$(pwd)"
-    if sudo -u riva python3 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py; then
+    if sudo -u riva python3 /opt/riva/nvidia-parakeet-ver-6/validate_integration.py; then
         log_success "Integration validation passed"
     else
         log_error "Integration validation failed"
