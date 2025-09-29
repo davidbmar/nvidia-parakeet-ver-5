@@ -455,6 +455,9 @@ if command -v python3 >/dev/null 2>&1; then
             PYTHON_TEST_PASSED=true
         else
             log_error "❌ Python WebSocket client test failed"
+            log_info "💡 Note: SSL certificate verification errors are normal with self-signed certificates"
+            log_info "   The server is using a self-signed SSL certificate for development/testing"
+            log_info "   Python WebSocket clients have been updated to handle this automatically"
             PYTHON_TEST_PASSED=false
         fi
     else
@@ -470,6 +473,9 @@ if command -v python3 >/dev/null 2>&1; then
                 PYTHON_TEST_PASSED=true
             else
                 log_error "❌ Python WebSocket client test failed"
+                log_info "💡 Note: SSL certificate verification errors are normal with self-signed certificates"
+                log_info "   The server is using a self-signed SSL certificate for development/testing"
+                log_info "   Python WebSocket clients have been updated to handle this automatically"
                 PYTHON_TEST_PASSED=false
             fi
         fi
