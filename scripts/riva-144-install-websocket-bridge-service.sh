@@ -154,12 +154,17 @@ log_info "🤝 Testing WebSocket handshake..."
 
 # Basic WebSocket handshake test using curl
 if command -v curl >/dev/null 2>&1; then
-    HANDSHAKE_RESPONSE=$(timeout 10 curl -s -i -N \
+    # Use https instead of wss for curl, and -k to ignore SSL cert issues
+    CURL_PROTOCOL="$WS_PROTOCOL"
+    if [[ "$WS_PROTOCOL" == "wss" ]]; then
+        CURL_PROTOCOL="https"
+    fi
+    HANDSHAKE_RESPONSE=$(timeout 10 curl -k -s -i -N \
         -H "Connection: Upgrade" \
         -H "Upgrade: websocket" \
         -H "Sec-WebSocket-Version: 13" \
         -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-        "${WS_PROTOCOL}://${TEST_HOST}:${WS_PORT}/" 2>/dev/null | head -1 || echo "FAILED")
+        "${CURL_PROTOCOL}://${TEST_HOST}:${WS_PORT}/" 2>/dev/null | head -1 || echo "FAILED")
 
     if echo "$HANDSHAKE_RESPONSE" | grep -q "101 Switching Protocols"; then
         log_success "✅ WebSocket handshake successful"
