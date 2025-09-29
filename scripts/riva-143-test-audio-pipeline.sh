@@ -21,7 +21,7 @@ validate_prerequisites() {
     log_info "🔍 Validating prerequisites from riva-141"
 
     # Check integration validation
-    if ! python3 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py >/dev/null 2>&1; then
+    if ! sudo -u riva /opt/riva/venv/bin/python /opt/riva/nvidia-parakeet-ver-6/validate_integration.py >/dev/null 2>&1; then
         log_error "Integration validation failed. Run riva-141 first"
         exit 1
     fi
