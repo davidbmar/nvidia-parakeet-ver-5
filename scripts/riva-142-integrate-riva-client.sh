@@ -256,8 +256,34 @@ EOF
     fi
 }
 
-# Create WebSocket bridge startup script
-create_bridge_startup_script() {
+# Validate existing WebSocket bridge from riva-141
+validate_existing_bridge() {
+    log_info "🔍 Validating existing WebSocket bridge deployment"
+
+    # Check if the bridge was deployed by riva-141
+    if [[ ! -f "/opt/riva/start-websocket-bridge.sh" ]]; then
+        log_error "WebSocket bridge startup script not found. Run riva-141-deploy-websocket-bridge.sh first"
+        exit 1
+    fi
+
+    # Test that we can import the bridge modules
+    cd /opt/riva/nvidia-parakeet-ver-6
+
+    if ! sudo -u riva /opt/riva/venv/bin/python -c "
+import sys
+sys.path.insert(0, '.')
+from src.asr.riva_websocket_bridge import WebSocketConfig, RivaWebSocketBridge
+print('✅ Bridge modules can be imported successfully')
+" 2>/dev/null; then
+        log_error "Cannot import WebSocket bridge modules"
+        exit 1
+    fi
+
+    log_success "✅ Existing WebSocket bridge validation passed"
+}
+
+# Create WebSocket bridge startup script (deprecated - using riva-141 deployment)
+create_bridge_startup_script_deprecated() {
     log_info "🚀 Creating WebSocket bridge startup script"
 
     cat > /tmp/start_bridge.sh << 'EOF'
@@ -280,9 +306,10 @@ echo "  Log Level: ${LOG_LEVEL}"
 exec python3 bin/riva_websocket_bridge.py
 EOF
 
-    sudo mv /tmp/start_bridge.sh /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
-    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
-    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
+    # Note: Using existing startup script from riva-141 deployment
+    sudo mv /tmp/start_bridge.sh /opt/riva/start-websocket-bridge-riva142.sh
+    sudo chown riva:riva /opt/riva/start-websocket-bridge-riva142.sh
+    sudo chmod 755 /opt/riva/start-websocket-bridge-riva142.sh
 
     log_success "Bridge startup script created"
 }
@@ -423,12 +450,8 @@ main() {
     create_synthetic_audio_test
     end_step
 
-    start_step "create_bridge_startup_script"
-    create_bridge_startup_script
-    end_step
-
-    start_step "test_bridge_startup"
-    test_bridge_startup
+    start_step "validate_existing_bridge"
+    validate_existing_bridge
     end_step
 
     start_step "create_integration_validation"
@@ -441,12 +464,12 @@ main() {
     # Print integration summary
     echo ""
     echo "🔧 Integration Summary:"
-    echo "  WebSocket Bridge: /opt/riva/nvidia-parakeet-ver-6/bin/riva_websocket_bridge.py"
+    echo "  WebSocket Bridge: /opt/riva/nvidia-parakeet-ver-6/src/asr/riva_websocket_bridge.py"
     echo "  RIVA Client: src/asr/riva_client.py"
-    echo "  Startup Script: /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh"
-    echo "  Validation: /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py"
+    echo "  Startup Script: /opt/riva/start-websocket-bridge.sh"
+    echo "  Validation: /opt/riva/nvidia-parakeet-ver-6/validate_integration.py"
     echo ""
-    echo "🚀 Start bridge manually: sudo /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh"
+    echo "🚀 Start bridge manually: sudo -u riva /opt/riva/start-websocket-bridge.sh"
     echo ""
 }
 
