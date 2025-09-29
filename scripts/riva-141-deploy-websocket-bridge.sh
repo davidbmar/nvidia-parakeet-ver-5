@@ -66,7 +66,7 @@ cat > "$PROJECT_DIR/requirements-websocket.txt" << EOF
 # WebSocket Bridge Dependencies
 websockets>=12.0
 numpy>=1.21.0
-grpc-tools>=1.48.0
+grpcio-tools>=1.48.0
 nvidia-riva-client>=2.14.0
 aiofiles>=23.0.0
 prometheus-client>=0.17.0

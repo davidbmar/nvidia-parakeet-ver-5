@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RIVA ASR Demo - Real-time Transcription</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .status-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+        }
+
+        .status-item {
+            flex: 1;
+            text-align: center;
+        }
+
+        .status-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .status-value {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-value.connected { color: #4caf50; }
+        .status-value.disconnected { color: #f44336; }
+        .status-value.connecting { color: #ff9800; }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button.secondary {
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .audio-visualizer {
+            height: 60px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 3px;
+        }
+
+        .audio-bar {
+            flex: 1;
+            background: #667eea;
+            border-radius: 3px;
+            transition: height 0.1s;
+            max-height: 40px;
+        }
+
+        .transcription-area {
+            border: 2px solid #f5f5f5;
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 200px;
+            margin-bottom: 20px;
+        }
+
+        .transcript-line {
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            animation: fadeIn 0.5s;
+        }
+
+        .transcript-line.partial {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .transcript-line.final {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .logs {
+            background: #2d2d2d;
+            color: #f5f5f5;
+            padding: 15px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .log-entry.error { color: #ff6b6b; }
+        .log-entry.success { color: #51cf66; }
+        .log-entry.info { color: #339af0; }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: 5px;
+        }
+
+        .badge.live { background: #4caf50; color: white; }
+        .badge.mock { background: #ff9800; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ NVIDIA RIVA ASR Demo</h1>
+        <p class="subtitle">Real-time speech transcription using Parakeet RNNT</p>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-label">WebSocket</div>
+                <div id="wsStatus" class="status-value disconnected">Disconnected</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">Audio</div>
+                <div id="audioStatus" class="status-value disconnected">Not Started</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">RIVA</div>
+                <div id="rivaStatus" class="status-value disconnected">
+                    Not Connected
+                    <span id="rivaBadge" class="badge mock" style="display:none">MOCK</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="connectBtn" class="primary" onclick="toggleConnection()">
+                Connect to Server
+            </button>
+            <button id="recordBtn" class="secondary" onclick="toggleRecording()" disabled>
+                Start Recording
+            </button>
+        </div>
+
+        <div class="audio-visualizer" id="visualizer">
+            <!-- Audio bars will be added dynamically -->
+        </div>
+
+        <div class="transcription-area" id="transcriptionArea">
+            <div style="color: #999; text-align: center; padding: 50px 0;">
+                Connect and start recording to see transcriptions here
+            </div>
+        </div>
+
+        <div class="logs" id="logs"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const WS_URL = 'ws://3.16.124.227:8444/';
+        const SAMPLE_RATE = 16000;
+        const FRAME_MS = 100; // Send audio every 100ms
+
+        // State
+        let ws = null;
+        let audioContext = null;
+        let mediaStream = null;
+        let processor = null;
+        let source = null;
+        let isRecording = false;
+        let isConnected = false;
+        let audioBuffer = [];
+
+        // Logging
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+
+            const logsContainer = document.getElementById('logs');
+            logsContainer.appendChild(logEntry);
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // Status updates
+        function updateStatus(element, status, className) {
+            const el = document.getElementById(element);
+            el.textContent = status;
+            el.className = `status-value ${className}`;
+        }
+
+        // Initialize audio visualizer
+        function initVisualizer() {
+            const visualizer = document.getElementById('visualizer');
+            visualizer.innerHTML = '';
+            for (let i = 0; i < 20; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'audio-bar';
+                bar.style.height = '5px';
+                visualizer.appendChild(bar);
+            }
+        }
+
+        // Update audio visualizer
+        function updateVisualizer(audioData) {
+            const bars = document.querySelectorAll('.audio-bar');
+            const samples = audioData.length;
+            const step = Math.floor(samples / bars.length);
+
+            bars.forEach((bar, i) => {
+                const start = i * step;
+                const end = start + step;
+                let sum = 0;
+                for (let j = start; j < end && j < samples; j++) {
+                    sum += Math.abs(audioData[j]);
+                }
+                const average = sum / step;
+                const height = Math.min(40, (average / 32768) * 200);
+                bar.style.height = `${Math.max(5, height)}px`;
+            });
+        }
+
+        // WebSocket connection
+        function toggleConnection() {
+            if (isConnected) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+
+        function connect() {
+            log(`Connecting to ${WS_URL}...`);
+            updateStatus('wsStatus', 'Connecting...', 'connecting');
+
+            try {
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    isConnected = true;
+                    log('WebSocket connected!', 'success');
+                    updateStatus('wsStatus', 'Connected', 'connected');
+                    document.getElementById('connectBtn').textContent = 'Disconnect';
+                    document.getElementById('recordBtn').disabled = false;
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handleMessage(data);
+                    } catch (e) {
+                        log(`Failed to parse message: ${e}`, 'error');
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    log(`WebSocket error: ${error}`, 'error');
+                    updateStatus('wsStatus', 'Error', 'disconnected');
+                };
+
+                ws.onclose = () => {
+                    isConnected = false;
+                    log('WebSocket disconnected');
+                    updateStatus('wsStatus', 'Disconnected', 'disconnected');
+                    updateStatus('rivaStatus', 'Not Connected', 'disconnected');
+                    document.getElementById('connectBtn').textContent = 'Connect to Server';
+                    document.getElementById('recordBtn').disabled = true;
+
+                    if (isRecording) {
+                        stopRecording();
+                    }
+                };
+
+            } catch (error) {
+                log(`Failed to connect: ${error}`, 'error');
+                updateStatus('wsStatus', 'Failed', 'disconnected');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        // Message handling
+        function handleMessage(data) {
+            const { type } = data;
+
+            switch (type) {
+                case 'connected':
+                    log(`Connected: ${data.message}`);
+                    if (data.riva_status === 'mock_mode') {
+                        updateStatus('rivaStatus', 'Connected', 'connected');
+                        document.getElementById('rivaBadge').style.display = 'inline-block';
+                    } else {
+                        updateStatus('rivaStatus', 'Connected', 'connected');
+                        document.getElementById('rivaBadge').style.display = 'none';
+                    }
+                    break;
+
+                case 'session_started':
+                    log('Audio session started');
+                    break;
+
+                case 'partial_transcript':
+                    addTranscript(data.text, 'partial');
+                    break;
+
+                case 'final_transcript':
+                    addTranscript(data.text, 'final');
+                    break;
+
+                case 'error':
+                    log(`Server error: ${data.message}`, 'error');
+                    break;
+            }
+        }
+
+        // Transcription display
+        function addTranscript(text, type) {
+            const area = document.getElementById('transcriptionArea');
+
+            // Clear placeholder if it exists
+            if (area.querySelector('div[style]')) {
+                area.innerHTML = '';
+            }
+
+            // Remove last partial if adding new partial or final
+            const lastPartial = area.querySelector('.transcript-line.partial:last-child');
+            if (lastPartial && type === 'partial') {
+                lastPartial.remove();
+            } else if (lastPartial && type === 'final') {
+                lastPartial.remove();
+            }
+
+            // Add new transcript
+            const line = document.createElement('div');
+            line.className = `transcript-line ${type}`;
+            line.textContent = text;
+            area.appendChild(line);
+
+            // Keep only last 10 transcripts
+            const lines = area.querySelectorAll('.transcript-line');
+            if (lines.length > 10) {
+                lines[0].remove();
+            }
+
+            // Scroll to bottom
+            area.scrollTop = area.scrollHeight;
+        }
+
+        // Audio recording
+        async function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                log('Requesting microphone access...');
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: { ideal: SAMPLE_RATE },
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                log('Microphone access granted', 'success');
+                updateStatus('audioStatus', 'Recording', 'connected');
+
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: SAMPLE_RATE
+                });
+
+                source = audioContext.createMediaStreamSource(mediaStream);
+
+                // Create processor
+                const processorScript = `
+                    class AudioProcessor extends AudioWorkletProcessor {
+                        constructor() {
+                            super();
+                            this.buffer = [];
+                        }
+
+                        process(inputs, outputs, parameters) {
+                            const input = inputs[0];
+                            if (input.length > 0) {
+                                const samples = input[0];
+                                if (samples) {
+                                    // Convert float32 to int16
+                                    const int16 = new Int16Array(samples.length);
+                                    for (let i = 0; i < samples.length; i++) {
+                                        const s = Math.max(-1, Math.min(1, samples[i]));
+                                        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                                    }
+                                    this.port.postMessage({ audio: int16.buffer });
+                                }
+                            }
+                            return true;
+                        }
+                    }
+                    registerProcessor('audio-processor', AudioProcessor);
+                `;
+
+                const blob = new Blob([processorScript], { type: 'application/javascript' });
+                const url = URL.createObjectURL(blob);
+                await audioContext.audioWorklet.addModule(url);
+
+                processor = new AudioWorkletNode(audioContext, 'audio-processor');
+                processor.port.onmessage = (e) => {
+                    const audioData = new Int16Array(e.data.audio);
+                    audioBuffer.push(audioData);
+                    updateVisualizer(audioData);
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                // Send start session
+                ws.send(JSON.stringify({ type: 'start_session' }));
+
+                // Start sending audio
+                isRecording = true;
+                document.getElementById('recordBtn').textContent = 'Stop Recording';
+                document.getElementById('recordBtn').classList.add('primary');
+                document.getElementById('recordBtn').classList.remove('secondary');
+
+                // Send audio periodically
+                sendAudioLoop();
+
+                log('Recording started', 'success');
+
+            } catch (error) {
+                log(`Failed to start recording: ${error}`, 'error');
+                updateStatus('audioStatus', 'Error', 'disconnected');
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+
+            if (source) {
+                source.disconnect();
+                source = null;
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            // Send stop session
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'stop_session' }));
+            }
+
+            audioBuffer = [];
+            updateStatus('audioStatus', 'Stopped', 'disconnected');
+            document.getElementById('recordBtn').textContent = 'Start Recording';
+            document.getElementById('recordBtn').classList.remove('primary');
+            document.getElementById('recordBtn').classList.add('secondary');
+
+            log('Recording stopped');
+        }
+
+        // Send audio periodically
+        async function sendAudioLoop() {
+            while (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+                if (audioBuffer.length > 0) {
+                    // Combine buffers
+                    const totalLength = audioBuffer.reduce((sum, buf) => sum + buf.length, 0);
+                    const combined = new Int16Array(totalLength);
+                    let offset = 0;
+                    for (const buf of audioBuffer) {
+                        combined.set(buf, offset);
+                        offset += buf.length;
+                    }
+                    audioBuffer = [];
+
+                    // Convert to base64
+                    const bytes = new Uint8Array(combined.buffer);
+                    const base64 = btoa(String.fromCharCode.apply(null, bytes));
+
+                    // Send to server
+                    ws.send(JSON.stringify({
+                        type: 'audio_data',
+                        audio: base64
+                    }));
+                }
+
+                await new Promise(resolve => setTimeout(resolve, FRAME_MS));
+            }
+        }
+
+        // Initialize
+        initVisualizer();
+        log('RIVA ASR Demo initialized');
+        log(`WebSocket endpoint: ${WS_URL}`);
+    </script>
+</body>
+</html>
