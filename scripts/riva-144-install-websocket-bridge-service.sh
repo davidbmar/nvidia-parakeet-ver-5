@@ -390,5 +390,5 @@ echo "  Health:  sudo -u riva /opt/riva/health-check-websocket-bridge.sh"
 
 echo
 echo "Next steps:"
-echo "  1. Run: ./scripts/riva-143-test-websocket-client.sh"
-echo "  2. Run: ./scripts/riva-144-end-to-end-validation.sh"
+echo "  1. Run: ./scripts/riva-145-test-websocket-client.sh"
+echo "  2. Run: ./scripts/riva-146-end-to-end-validation.sh"
