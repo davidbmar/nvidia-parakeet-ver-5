@@ -422,9 +422,9 @@ EOF
     sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/validate_integration.py
     sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/validate_integration.py
 
-    # Run validation
-    cd "$(pwd)"
-    if sudo -u riva python3 /opt/riva/nvidia-parakeet-ver-6/validate_integration.py; then
+    # Run validation using the riva virtual environment
+    cd /opt/riva/nvidia-parakeet-ver-6
+    if sudo -u riva /opt/riva/venv/bin/python /opt/riva/nvidia-parakeet-ver-6/validate_integration.py; then
         log_success "Integration validation passed"
     else
         log_error "Integration validation failed"
