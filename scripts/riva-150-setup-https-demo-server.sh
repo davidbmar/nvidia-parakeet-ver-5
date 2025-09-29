@@ -6,8 +6,22 @@ set -euo pipefail
 # Prerequisites: SSL certificates created, WebSocket bridge running
 # Validation: HTTPS demo page accessible with microphone permissions
 
-source "$(dirname "$0")/riva-common-functions.sh"
-load_config
+# Source common functions if available, but don't fail if missing
+if [[ -f "$(dirname "$0")/riva-common-functions.sh" ]]; then
+    source "$(dirname "$0")/riva-common-functions.sh" 2>/dev/null || true
+    # Try to load config, but provide fallbacks
+    if command -v load_config >/dev/null 2>&1; then
+        load_config
+    fi
+fi
+
+# Fallback logging functions if not available from common functions
+if ! command -v log_info >/dev/null 2>&1; then
+    log_info() { echo "ℹ️  $*"; }
+    log_success() { echo "✅ $*"; }
+    log_error() { echo "❌ $*" >&2; }
+    log_warning() { echo "⚠️  $*"; }
+fi
 
 log_info "🔒 Setting up HTTPS demo server..."
 
@@ -95,8 +109,8 @@ def main():
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
     print(f"🔒 HTTPS server running on https://0.0.0.0:{port}/")
-    print(f"🎤 Demo page (with microphone access): https://$(hostname -I | awk '{print $1}'):{port}/demo.html")
-    print("📱 Debug page: https://$(hostname -I | awk '{print $1}'):{port}/debug-ws.html")
+    print(f"🎤 Demo page (with microphone access): https://SERVER_IP:{port}/demo.html")
+    print(f"📱 Debug page: https://SERVER_IP:{port}/debug-ws.html")
     print("⏹️  Press Ctrl+C to stop")
 
     try:

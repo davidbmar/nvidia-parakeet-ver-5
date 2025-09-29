@@ -6,8 +6,22 @@ set -euo pipefail
 # Prerequisites: WebSocket bridge setup completed
 # Validation: Browser can access microphone over HTTPS
 
-source "$(dirname "$0")/riva-common-functions.sh"
-load_config
+# Source common functions if available, but don't fail if missing
+if [[ -f "$(dirname "$0")/riva-common-functions.sh" ]]; then
+    source "$(dirname "$0")/riva-common-functions.sh" 2>/dev/null || true
+    # Try to load config, but provide fallbacks
+    if command -v load_config >/dev/null 2>&1; then
+        load_config
+    fi
+fi
+
+# Fallback logging functions if not available from common functions
+if ! command -v log_info >/dev/null 2>&1; then
+    log_info() { echo "ℹ️  $*"; }
+    log_success() { echo "✅ $*"; }
+    log_error() { echo "❌ $*" >&2; }
+    log_warning() { echo "⚠️  $*"; }
+fi
 
 log_info "🎤 Fixing getUserMedia compatibility issues..."
 
