@@ -232,7 +232,7 @@ fi
 cd "\$APP_PATH"
 
 # Set Python path
-export PYTHONPATH="\$APP_PATH:\$PYTHONPATH"
+export PYTHONPATH="\$APP_PATH:\${PYTHONPATH:-}"
 
 # Start WebSocket bridge
 echo "Starting WebSocket bridge server..."
