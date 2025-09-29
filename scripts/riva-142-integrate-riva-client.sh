@@ -346,7 +346,7 @@ test_bridge_startup() {
 create_integration_validation() {
     log_info "✅ Creating integration validation script"
 
-    cat > /opt/riva/nvidia-parakeet-ver-6/validate_integration.py << 'EOF'
+    sudo tee /opt/riva/nvidia-parakeet-ver-6/validate_integration.py > /dev/null << 'EOF'
 #!/usr/bin/env python3
 """
 Integration Validation Script
