@@ -85,12 +85,17 @@ fi
 log_info "🤝 Test 2: WebSocket handshake"
 
 if command -v curl >/dev/null 2>&1; then
-    HANDSHAKE_RESPONSE=$(timeout 10 curl -s -i -N \
+    # Convert wss:// to https:// for curl and add -k for self-signed certs
+    CURL_URL="$SERVER_URL"
+    if [[ "$SERVER_URL" =~ ^wss:// ]]; then
+        CURL_URL="${SERVER_URL/wss:/https:}"
+    fi
+    HANDSHAKE_RESPONSE=$(timeout 10 curl -k -s -i -N \
         -H "Connection: Upgrade" \
         -H "Upgrade: websocket" \
         -H "Sec-WebSocket-Version: 13" \
         -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-        "$SERVER_URL" 2>/dev/null | head -1 || echo "FAILED")
+        "$CURL_URL" 2>/dev/null | head -1 || echo "FAILED")
 
     if echo "$HANDSHAKE_RESPONSE" | grep -q "101 Switching Protocols"; then
         log_success "✅ WebSocket handshake successful"
