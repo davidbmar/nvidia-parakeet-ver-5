@@ -21,14 +21,14 @@ validate_prerequisites() {
     log_info "🔍 Validating prerequisites from riva-140"
 
     # Check service directories exist
-    if [[ ! -d "/opt/riva-ws/bin" ]]; then
-        log_error "Service directories not found. Run riva-140-setup-websocket-bridge.sh first"
+    if [[ ! -d "/opt/riva/nvidia-parakeet-ver-6" ]]; then
+        log_error "Service directories not found. Run riva-141-deploy-websocket-bridge.sh first"
         exit 1
     fi
 
     # Check WebSocket bridge script exists
-    if [[ ! -f "/opt/riva-ws/bin/riva_websocket_bridge.py" ]]; then
-        log_error "WebSocket bridge script not found. Run riva-140 first"
+    if [[ ! -f "/opt/riva/nvidia-parakeet-ver-6/src/asr/riva_websocket_bridge.py" ]]; then
+        log_error "WebSocket bridge script not found. Run riva-141 first"
         exit 1
     fi
 
@@ -265,10 +265,10 @@ create_bridge_startup_script() {
 set -euo pipefail
 
 # WebSocket Bridge Startup Script
-cd /opt/riva-ws
+cd /opt/riva/nvidia-parakeet-ver-6
 source config/.env
 
-export PYTHONPATH="/opt/riva-ws:\${PYTHONPATH:-}"
+export PYTHONPATH="/opt/riva/nvidia-parakeet-ver-6:\${PYTHONPATH:-}"
 
 echo "Starting RIVA WebSocket Bridge..."
 echo "Configuration:"
@@ -280,9 +280,9 @@ echo "  Log Level: ${LOG_LEVEL}"
 exec python3 bin/riva_websocket_bridge.py
 EOF
 
-    sudo mv /tmp/start_bridge.sh /opt/riva-ws/bin/start_bridge.sh
-    sudo chown riva-ws:riva-ws /opt/riva-ws/bin/start_bridge.sh
-    sudo chmod 755 /opt/riva-ws/bin/start_bridge.sh
+    sudo mv /tmp/start_bridge.sh /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
+    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
+    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh
 
     log_success "Bridge startup script created"
 }
@@ -292,11 +292,11 @@ test_bridge_startup() {
     log_info "🧪 Testing WebSocket bridge startup"
 
     # Start bridge in background with timeout
-    cd /opt/riva-ws
+    cd /opt/riva/nvidia-parakeet-ver-6
     timeout 10s bash -c "
-        cd /opt/riva-ws
+        cd /opt/riva/nvidia-parakeet-ver-6
         source config/.env
-        export PYTHONPATH='/opt/riva-ws:/home/ubuntu/.local/lib/python3.12/site-packages:${PYTHONPATH:-}'
+        export PYTHONPATH='/opt/riva/nvidia-parakeet-ver-6:/home/ubuntu/.local/lib/python3.12/site-packages:${PYTHONPATH:-}'
         python3 bin/riva_websocket_bridge.py
     " &
 
@@ -319,7 +319,7 @@ test_bridge_startup() {
 create_integration_validation() {
     log_info "✅ Creating integration validation script"
 
-    cat > /opt/riva-ws/bin/validate_integration.py << 'EOF'
+    cat > /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py << 'EOF'
 #!/usr/bin/env python3
 """
 Integration Validation Script
@@ -332,7 +332,7 @@ import asyncio
 from pathlib import Path
 
 # Add paths
-sys.path.insert(0, '/opt/riva-ws')
+sys.path.insert(0, '/opt/riva/nvidia-parakeet-ver-6')
 sys.path.insert(0, str(Path.cwd()))
 
 async def validate_integration():
@@ -392,12 +392,12 @@ if __name__ == "__main__":
     sys.exit(0 if result else 1)
 EOF
 
-    sudo chown riva-ws:riva-ws /opt/riva-ws/bin/validate_integration.py
-    sudo chmod 755 /opt/riva-ws/bin/validate_integration.py
+    sudo chown riva:riva /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py
+    sudo chmod 755 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py
 
     # Run validation
     cd "$(pwd)"
-    if sudo -u riva-ws python3 /opt/riva-ws/bin/validate_integration.py; then
+    if sudo -u riva python3 /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py; then
         log_success "Integration validation passed"
     else
         log_error "Integration validation failed"
@@ -441,12 +441,12 @@ main() {
     # Print integration summary
     echo ""
     echo "🔧 Integration Summary:"
-    echo "  WebSocket Bridge: /opt/riva-ws/bin/riva_websocket_bridge.py"
+    echo "  WebSocket Bridge: /opt/riva/nvidia-parakeet-ver-6/bin/riva_websocket_bridge.py"
     echo "  RIVA Client: src/asr/riva_client.py"
-    echo "  Startup Script: /opt/riva-ws/bin/start_bridge.sh"
-    echo "  Validation: /opt/riva-ws/bin/validate_integration.py"
+    echo "  Startup Script: /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh"
+    echo "  Validation: /opt/riva/nvidia-parakeet-ver-6/bin/validate_integration.py"
     echo ""
-    echo "🚀 Start bridge manually: sudo /opt/riva-ws/bin/start_bridge.sh"
+    echo "🚀 Start bridge manually: sudo /opt/riva/nvidia-parakeet-ver-6/bin/start_bridge.sh"
     echo ""
 }
 

@@ -20,7 +20,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Import existing Riva client
-from .riva_client import RivaASRClient, RivaConfig
+try:
+    from .riva_client import RivaASRClient, RivaConfig
+except ImportError:
+    # Fallback for when running as standalone script
+    from src.asr.riva_client import RivaASRClient, RivaConfig
 
 logger = logging.getLogger(__name__)
 
