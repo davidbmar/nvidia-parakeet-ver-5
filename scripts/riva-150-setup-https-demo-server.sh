@@ -26,7 +26,7 @@ fi
 log_info "🔒 Setting up HTTPS demo server..."
 
 # Configuration
-HTTPS_PORT="${DEMO_HTTPS_PORT:-8444}"
+HTTPS_PORT="${DEMO_HTTPS_PORT:-8080}"
 HTTP_PORT="${DEMO_HTTP_PORT:-8080}"
 CERT_FILE="${APP_SSL_CERT:-/opt/riva/certs/server.crt}"
 KEY_FILE="${APP_SSL_KEY:-/opt/riva/certs/server.key}"
