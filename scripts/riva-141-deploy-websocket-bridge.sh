@@ -320,7 +320,7 @@ if [[ "${WS_TLS_ENABLED:-false}" == "true" ]]; then
 fi
 
 echo "   Server URL: ${WS_PROTOCOL}://${WS_HOST}:${WS_PORT}/"
-echo "   Riva Target: ${WS_RIVA_TARGET}"
+echo "   Riva Target: ${RIVA_HOST}:${RIVA_PORT}"
 echo "   Audio Config: ${WS_SAMPLE_RATE}Hz, ${WS_CHANNELS}ch, ${WS_FRAME_MS}ms frames"
 
 if [[ "${CONNECTION_TEST_PASSED}" == "true" ]]; then
