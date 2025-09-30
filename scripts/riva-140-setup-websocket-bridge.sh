@@ -20,6 +20,19 @@ load_environment
 validate_and_setup_config() {
     log_info "🔧 Validating and setting up WebSocket bridge configuration"
 
+    # Auto-configure RIVA_HOST from GPU_INSTANCE_IP if needed
+    if [[ -n "${GPU_INSTANCE_IP:-}" ]] && [[ "${RIVA_HOST:-}" == "localhost" || -z "${RIVA_HOST:-}" ]]; then
+        log_info "Setting RIVA_HOST to GPU_INSTANCE_IP: ${GPU_INSTANCE_IP}"
+        # Update .env file to persist the setting
+        if grep -q "^RIVA_HOST=" .env 2>/dev/null; then
+            sed -i "s/^RIVA_HOST=.*/RIVA_HOST=${GPU_INSTANCE_IP}/" .env
+        else
+            echo "RIVA_HOST=${GPU_INSTANCE_IP}" >> .env
+        fi
+        export RIVA_HOST="${GPU_INSTANCE_IP}"
+        log_success "RIVA_HOST automatically configured to ${GPU_INSTANCE_IP}"
+    fi
+
     # Check required environment variables
     local required_vars=(
         "RIVA_HOST"
