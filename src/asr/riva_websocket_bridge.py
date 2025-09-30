@@ -19,6 +19,25 @@ from websockets.server import WebSocketServerProtocol
 from dataclasses import dataclass
 from pathlib import Path
 
+# Load .env file if it exists
+def load_env_file(env_path=".env"):
+    """Load environment variables from .env file"""
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Only set if not already in environment
+                    if key not in os.environ:
+                        os.environ[key] = value
+
+# Load .env from current directory or parent directories
+for env_file in [".env", "../.env", "../../.env"]:
+    if os.path.exists(env_file):
+        load_env_file(env_file)
+        break
+
 # Import existing Riva client
 try:
     from .riva_client import RivaASRClient, RivaConfig
@@ -140,13 +159,21 @@ class RivaWebSocketBridge:
 
         # Configure logging
         log_level = getattr(logging, self.config.log_level.upper(), logging.INFO)
+        # Use appropriate log directory with fallback
+        log_dir = '/opt/riva/logs' if os.path.exists('/opt/riva/logs') else '/tmp'
+        log_file = os.path.join(log_dir, 'websocket_bridge.log')
+
+        handlers = [logging.StreamHandler()]
+        try:
+            handlers.append(logging.FileHandler(log_file))
+        except PermissionError:
+            # Fallback to console-only logging if file logging fails
+            logging.warning(f"Cannot write to log file {log_file}, using console only")
+
         logging.basicConfig(
             level=log_level,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('/tmp/websocket_bridge.log'),
-                logging.StreamHandler()
-            ]
+            handlers=handlers
         )
 
         logger.info(f"WebSocket bridge initialized for {self.config.host}:{self.config.port}")
