@@ -1,0 +1,23 @@
+{
+  "deployment_id": "133-20250930-043618-2ed33546",
+  "timestamp": "2025-09-30T04:38:35Z",
+  "script": "133",
+  "server": {
+    "container_name": "riva-server",
+    "image": "nvcr.io/nvidia/riva/riva-speech:2.19.0",
+    "gpu_instance": "18.221.126.7",
+    "grpc_port": 50051,
+    "http_port": 8000
+  },
+  "model": {
+    "name": "parakeet-rnnt-1-1b-en-us-deployable_v8.1",
+    "repository_path": "/opt/riva/models",
+    "riva_repository": "s3://dbm-cf-2-web/bintarball/deployment-metadata/10/parakeet-rnnt-riva-1-1b-en-us-deployable_v8.1.tar.gz/v8.1/riva_repository/"
+  },
+  "configuration": {
+    "metrics_enabled": true,
+    "metrics_port": 9090,
+    "ready_timeout": 180
+  },
+  "status": "deployed"
+}

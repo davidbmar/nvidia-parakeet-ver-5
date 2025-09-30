@@ -9,7 +9,7 @@ riva-035-reboot-gpu-instance-after-drivers.sh
 
 scripts/riva-041-install-gpu-prerequisites.sh  
 
-  New script sequence for RIVA deployment:
+Reviewed riva-13x scripts - These handle Riva server deployment:
   1. riva-130-downloads-validates-and-stages-model-artifacts-to-s3.sh - Downloads and stages
    models
   2. riva-131-converts-models-using-official-riva-build-tools.sh - Converts models using
@@ -18,6 +18,16 @@ scripts/riva-041-install-gpu-prerequisites.sh
   4. riva-133-deploys-riva-server-with-converted-models.sh - Deploys RIVA server
   5. riva-134-end-to-end-validation-of-deployment.sh - Validates deployment
   6. riva-135-build-and-deploy-models.sh - Alternative build and deploy
+
+
+Reviewed riva-14x scripts - These handle WebSocket bridge setup for live transcription:
+    - riva-140: Setup WebSocket bridge infrastructure
+    - riva-141: Deploy WebSocket bridge server
+    - riva-142: Integrate with Riva client
+    - riva-143: Test audio pipeline
+    - riva-144: Install as systemd service
+    - riva-145: Test WebSocket client
+    - riva-146-149: End-to-end validation and demos
 
 
 Testing Instructions:

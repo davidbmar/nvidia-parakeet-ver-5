@@ -24,6 +24,25 @@ except ImportError as e:
         f"Riva client not installed or has dependency issues: {e}. Run: pip install nvidia-riva-client"
     )
 
+# Load .env file if it exists
+def load_env_file(env_path=".env"):
+    """Load environment variables from .env file"""
+    if os.path.exists(env_path):
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    # Only set if not already in environment
+                    if key not in os.environ:
+                        os.environ[key] = value
+
+# Load .env from current directory or parent directories
+for env_file in [".env", "../.env", "../../.env"]:
+    if os.path.exists(env_file):
+        load_env_file(env_file)
+        break
+
 logger = logging.getLogger(__name__)
 
 
