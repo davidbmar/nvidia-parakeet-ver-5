@@ -107,7 +107,8 @@ log_info "🔒 Setting file permissions..."
 
 sudo chown -R riva:riva /opt/riva
 sudo chmod -R 755 /opt/riva/nvidia-parakeet-ver-6
-sudo chmod 600 /opt/riva/nvidia-parakeet-ver-6/.env
+sudo chmod 640 /opt/riva/nvidia-parakeet-ver-6/.env  # Readable by riva group only (contains NGC_API_KEY)
+sudo chgrp riva /opt/riva/nvidia-parakeet-ver-6/.env
 
 # Set up log rotation
 log_info "📝 Setting up log rotation..."
