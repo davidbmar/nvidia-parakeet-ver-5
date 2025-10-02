@@ -237,7 +237,7 @@ class RivaASRClient:
                     profanity_filter=False,
                     # speech_contexts for hotwords if provided
                     speech_contexts=[
-                        riva.client.SpeechContext(phrases=hotwords, boost=10.0)
+                        riva_asr_pb2.SpeechContext(phrases=hotwords, boost=10.0)
                     ] if hotwords else None
                 ),
                 interim_results=enable_partials and self.config.enable_partials
