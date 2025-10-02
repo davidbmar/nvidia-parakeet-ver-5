@@ -14,19 +14,15 @@ import ssl
 from pathlib import Path
 
 # Create SSL context that accepts self-signed certificates
-def create_ssl_context():
-    """Create SSL context for self-signed certificates"""
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    return ssl_context
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 async def test_websocket_connection(server_url):
     """Test basic WebSocket connection and messaging"""
     print(f"Testing connection to: {server_url}")
 
     try:
-        ssl_context = create_ssl_context() if server_url.startswith('wss://') else None
         async with websockets.connect(server_url, ssl=ssl_context) as websocket:
             print("✅ WebSocket connection established")
 
@@ -51,7 +47,6 @@ async def test_transcription_session(server_url, audio_file=None):
     print(f"Testing transcription session...")
 
     try:
-        ssl_context = create_ssl_context() if server_url.startswith('wss://') else None
         async with websockets.connect(server_url, ssl=ssl_context) as websocket:
             # Wait for connection message
             connection_msg = await asyncio.wait_for(websocket.recv(), timeout=10)
@@ -183,7 +178,6 @@ async def test_metrics_and_ping(server_url):
     print("Testing metrics and ping...")
 
     try:
-        ssl_context = create_ssl_context() if server_url.startswith('wss://') else None
         async with websockets.connect(server_url, ssl=ssl_context) as websocket:
             # Wait for connection
             await websocket.recv()

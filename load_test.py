@@ -12,17 +12,13 @@ import ssl
 from concurrent.futures import ThreadPoolExecutor
 
 # Create SSL context that accepts self-signed certificates
-def create_ssl_context():
-    """Create SSL context for self-signed certificates"""
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
-    return ssl_context
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
 
 async def create_connection(server_url, connection_id):
     """Create a single WebSocket connection"""
     try:
-        ssl_context = create_ssl_context() if server_url.startswith('wss://') else None
         async with websockets.connect(server_url, ssl=ssl_context) as websocket:
             # Wait for connection message
             message = await asyncio.wait_for(websocket.recv(), timeout=5)
