@@ -311,6 +311,23 @@ start_instance() {
     update_env_file "GPU_INSTANCE_IP" "$public_ip"
     update_env_file "RIVA_HOST" "$public_ip"
 
+    # Update deployed WebSocket bridge .env if it exists
+    if [ -f "/opt/riva/nvidia-parakeet-ver-6/.env" ]; then
+        json_log "$SCRIPT_NAME" "update_deployed_env" "info" "Updating deployed WebSocket bridge configuration"
+        sudo sed -i "s|^RIVA_HOST=.*|RIVA_HOST=$public_ip|" /opt/riva/nvidia-parakeet-ver-6/.env
+        sudo sed -i "s|^GPU_INSTANCE_IP=.*|GPU_INSTANCE_IP=$public_ip|" /opt/riva/nvidia-parakeet-ver-6/.env
+
+        # Restart WebSocket bridge service to pick up new IP
+        if sudo systemctl is-active riva-websocket-bridge.service >/dev/null 2>&1; then
+            json_log "$SCRIPT_NAME" "restart_bridge" "info" "Restarting WebSocket bridge with new RIVA_HOST"
+            sudo systemctl restart riva-websocket-bridge.service
+            echo "  • WebSocket bridge restarted with new RIVA IP"
+        fi
+
+        json_log "$SCRIPT_NAME" "update_deployed_env" "ok" "Deployed configuration updated" \
+            "riva_host=$public_ip"
+    fi
+
     # Update state cache
     write_state_cache "$INSTANCE_ID" "running" "$public_ip" "$private_ip"
 
