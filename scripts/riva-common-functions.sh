@@ -53,6 +53,28 @@ load_environment() {
     log_info "Environment loaded from .env"
 }
 
+# Update or add a variable to .env file (prevents duplicates)
+# Usage: update_env_var "VAR_NAME" "value" [env_file_path]
+update_env_var() {
+    local var_name="$1"
+    local var_value="$2"
+    local env_file="${3:-.env}"
+
+    if [[ ! -f "$env_file" ]]; then
+        log_error "Environment file not found: $env_file"
+        return 1
+    fi
+
+    # Check if variable exists
+    if grep -q "^${var_name}=" "$env_file"; then
+        # Update existing variable
+        sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" "$env_file"
+    else
+        # Append new variable
+        echo "${var_name}=${var_value}" >> "$env_file"
+    fi
+}
+
 # Step execution helpers
 start_step() {
     local step_name="$1"

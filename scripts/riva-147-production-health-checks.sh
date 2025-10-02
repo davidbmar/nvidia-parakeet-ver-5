@@ -20,7 +20,24 @@ if [[ ! -f "/opt/riva/nvidia-parakeet-ver-6/.env" ]]; then
     exit 1
 fi
 
-source /opt/riva/nvidia-parakeet-ver-6/.env
+# Add current user to riva group if not already a member (needed to read .env)
+if ! groups | grep -q "\briva\b"; then
+    log_info "Adding current user to riva group for .env access..."
+    sudo usermod -a -G riva "$USER"
+    log_warn "Group membership updated. You may need to log out and back in, or run: newgrp riva"
+fi
+
+# Source .env file (readable by riva group)
+if [[ -r "/opt/riva/nvidia-parakeet-ver-6/.env" ]]; then
+    source /opt/riva/nvidia-parakeet-ver-6/.env
+elif sudo -u riva test -r "/opt/riva/nvidia-parakeet-ver-6/.env"; then
+    # Fallback: use sudo if current user can't read it yet (group not active)
+    log_info "Reading .env with sudo (group membership not active yet)..."
+    eval "$(sudo cat /opt/riva/nvidia-parakeet-ver-6/.env | grep -E '^[A-Z_]+=.*')"
+else
+    log_error "Cannot read /opt/riva/nvidia-parakeet-ver-6/.env"
+    exit 1
+fi
 
 if [[ "${WS_E2E_VALIDATION_COMPLETE:-false}" != "true" ]]; then
     log_error "End-to-end validation not complete. Run riva-144 first."

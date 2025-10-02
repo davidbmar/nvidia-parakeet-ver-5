@@ -439,24 +439,14 @@ test_local_connectivity() {
 update_buildbox_env() {
     log_info "💾 Updating .env with build box configuration"
 
-    # Add build box specific configuration
-    if ! grep -q "^BUILDBOX_INSTANCE_ID=" .env 2>/dev/null; then
-        echo "" >> .env
-        echo "# Build Box WebSocket Demo Configuration (added by riva-145)" >> .env
-        echo "BUILDBOX_INSTANCE_ID=\"$BUILDBOX_INSTANCE_ID\"" >> .env
-        echo "BUILDBOX_SECURITY_GROUP=\"$BUILDBOX_SECURITY_GROUP\"" >> .env
-        echo "BUILDBOX_PUBLIC_IP=\"$BUILDBOX_PUBLIC_IP\"" >> .env
-        echo "WEBSOCKET_DEMO_URL=\"http://$BUILDBOX_PUBLIC_IP:8080/static/demo.html\"" >> .env
-        echo "WEBSOCKET_BRIDGE_URL=\"wss://$BUILDBOX_PUBLIC_IP:8443/\"" >> .env
-        echo "WEBSOCKET_DEMO_CONFIGURED=\"true\"" >> .env
-        echo "WEBSOCKET_DEMO_TIMESTAMP=\"$(date -Iseconds)\"" >> .env
-    else
-        # Update existing values
-        sed -i "s|^BUILDBOX_PUBLIC_IP=.*|BUILDBOX_PUBLIC_IP=\"$BUILDBOX_PUBLIC_IP\"|" .env
-        sed -i "s|^WEBSOCKET_DEMO_URL=.*|WEBSOCKET_DEMO_URL=\"http://$BUILDBOX_PUBLIC_IP:8080/static/demo.html\"|" .env
-        sed -i "s|^WEBSOCKET_BRIDGE_URL=.*|WEBSOCKET_BRIDGE_URL=\"wss://$BUILDBOX_PUBLIC_IP:8443/\"|" .env
-        sed -i "s|^WEBSOCKET_DEMO_TIMESTAMP=.*|WEBSOCKET_DEMO_TIMESTAMP=\"$(date -Iseconds)\"|" .env
-    fi
+    # Add build box specific configuration using update_env_var to prevent duplicates
+    update_env_var "BUILDBOX_INSTANCE_ID" "\"$BUILDBOX_INSTANCE_ID\""
+    update_env_var "BUILDBOX_SECURITY_GROUP" "\"$BUILDBOX_SECURITY_GROUP\""
+    update_env_var "BUILDBOX_PUBLIC_IP" "\"$BUILDBOX_PUBLIC_IP\""
+    update_env_var "WEBSOCKET_DEMO_URL" "\"http://$BUILDBOX_PUBLIC_IP:8080/static/demo.html\""
+    update_env_var "WEBSOCKET_BRIDGE_URL" "\"wss://$BUILDBOX_PUBLIC_IP:8443/\""
+    update_env_var "WEBSOCKET_DEMO_CONFIGURED" "\"true\""
+    update_env_var "WEBSOCKET_DEMO_TIMESTAMP" "\"$(date -Iseconds)\""
 
     log_success "Build box configuration saved to .env"
 }

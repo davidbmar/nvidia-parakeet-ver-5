@@ -208,20 +208,12 @@ restart_websocket_bridge() {
 update_env_config() {
     log_info "💾 Updating .env configuration"
 
-    # Update certificate regeneration timestamp
-    if grep -q "^SSL_CERT_REGENERATED=" .env 2>/dev/null; then
-        sed -i "s|^SSL_CERT_REGENERATED=.*|SSL_CERT_REGENERATED=\"$(date -Iseconds)\"|" .env
-    else
-        echo "" >> .env
-        echo "# SSL Certificate Management (added by riva-146)" >> .env
-        echo "SSL_CERT_REGENERATED=\"$(date -Iseconds)\"" >> .env
-        echo "SSL_CERT_IP=\"$CURRENT_IP\"" >> .env
-    fi
+    # Update certificate regeneration timestamp using update_env_var to prevent duplicates
+    update_env_var "SSL_CERT_REGENERATED" "\"$(date -Iseconds)\""
+    update_env_var "SSL_CERT_IP" "\"$CURRENT_IP\""
 
     # Update build box IP if it changed
-    if grep -q "^BUILDBOX_PUBLIC_IP=" .env 2>/dev/null; then
-        sed -i "s|^BUILDBOX_PUBLIC_IP=.*|BUILDBOX_PUBLIC_IP=\"$CURRENT_IP\"|" .env
-    fi
+    update_env_var "BUILDBOX_PUBLIC_IP" "\"$CURRENT_IP\""
 
     log_success "Configuration updated"
 }

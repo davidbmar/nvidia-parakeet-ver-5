@@ -506,13 +506,8 @@ EOF
     log "Deployment manifest written: $deployment_file"
 
     # Update .env to mark models as ready (for quick-start scripts)
-    if ! grep -q "^RIVA_MODELS_READY=" "${PROJECT_ROOT}/.env" 2>/dev/null; then
-        echo "RIVA_MODELS_READY=true" >> "${PROJECT_ROOT}/.env"
-        log "Added RIVA_MODELS_READY=true to .env"
-    else
-        sed -i 's/^RIVA_MODELS_READY=.*/RIVA_MODELS_READY=true/' "${PROJECT_ROOT}/.env"
-        log "Updated RIVA_MODELS_READY=true in .env"
-    fi
+    update_env_var "RIVA_MODELS_READY" "true" "${PROJECT_ROOT}/.env"
+    log "Updated RIVA_MODELS_READY=true in .env"
 
     echo
     echo "🚀 RIVA SERVER DEPLOYMENT SUMMARY"

@@ -24,11 +24,7 @@ validate_and_setup_config() {
     if [[ -n "${GPU_INSTANCE_IP:-}" ]] && [[ "${RIVA_HOST:-}" == "localhost" || -z "${RIVA_HOST:-}" ]]; then
         log_info "Setting RIVA_HOST to GPU_INSTANCE_IP: ${GPU_INSTANCE_IP}"
         # Update .env file to persist the setting
-        if grep -q "^RIVA_HOST=" .env 2>/dev/null; then
-            sed -i "s/^RIVA_HOST=.*/RIVA_HOST=${GPU_INSTANCE_IP}/" .env
-        else
-            echo "RIVA_HOST=${GPU_INSTANCE_IP}" >> .env
-        fi
+        update_env_var "RIVA_HOST" "${GPU_INSTANCE_IP}"
         export RIVA_HOST="${GPU_INSTANCE_IP}"
         log_success "RIVA_HOST automatically configured to ${GPU_INSTANCE_IP}"
     fi
@@ -74,17 +70,17 @@ validate_and_setup_config() {
 
     # Derive additional WebSocket configuration
     if [[ -z "${WS_TLS_ENABLED:-}" ]]; then
-        echo "WS_TLS_ENABLED=true" >> .env
+        update_env_var "WS_TLS_ENABLED" "true"
         log_info "Added WS_TLS_ENABLED=true to .env"
     fi
 
     if [[ -z "${WS_MAX_CONCURRENT_SESSIONS:-}" ]]; then
-        echo "WS_MAX_CONCURRENT_SESSIONS=50" >> .env
+        update_env_var "WS_MAX_CONCURRENT_SESSIONS" "50"
         log_info "Added WS_MAX_CONCURRENT_SESSIONS=50 to .env"
     fi
 
     if [[ -z "${WS_FRAME_MS:-}" ]]; then
-        echo "WS_FRAME_MS=20" >> .env
+        update_env_var "WS_FRAME_MS" "20"
         log_info "Added WS_FRAME_MS=20 to .env (low latency)"
     fi
 
@@ -194,8 +190,8 @@ setup_tls_certificates() {
             -days 365 -nodes -subj "/C=US/ST=CA/L=SF/O=RIVA/CN=localhost"
 
         # Update .env with certificate paths
-        echo "APP_SSL_CERT=$cert_dir/server.crt" >> .env
-        echo "APP_SSL_KEY=$cert_dir/server.key" >> .env
+        update_env_var "APP_SSL_CERT" "$cert_dir/server.crt"
+        update_env_var "APP_SSL_KEY" "$cert_dir/server.key"
         log_info "Updated .env with certificate paths"
     fi
 
@@ -340,7 +336,7 @@ main() {
     end_step
 
     # Mark setup as complete
-    echo "WS_BRIDGE_CONFIG_COMPLETE=true" >> .env
+    update_env_var "WS_BRIDGE_CONFIG_COMPLETE" "true"
     log_success "Configuration completion flag added to .env"
 
     log_success "✅ WebSocket bridge setup completed successfully"
@@ -376,7 +372,7 @@ prompt_and_set_env() {
 
     local value="${user_input:-$default_value}"
     if [[ -n "$value" ]]; then
-        echo "$var_name=$value" >> .env
+        update_env_var "$var_name" "$value"
         export "$var_name=$value"
 
         # Mask sensitive values in logs
