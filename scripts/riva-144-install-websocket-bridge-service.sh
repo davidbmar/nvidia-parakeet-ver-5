@@ -9,10 +9,35 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Parse command line arguments FIRST
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --force)
+            export FORCE_RESTART=true
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  --force    Force service restart even if already running"
+            echo "  --help     Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1"
+            echo "Run with --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 source "$SCRIPT_DIR/riva-common-functions.sh"
 load_environment
 
 log_info "⚙️ Installing WebSocket Bridge System Service"
+if [[ "${FORCE_RESTART:-false}" == "true" ]]; then
+    log_info "🔄 Force restart mode enabled"
+fi
 
 # Check prerequisites
 if [[ ! -f "/opt/riva/nvidia-parakeet-ver-6/.env" ]]; then
@@ -46,16 +71,31 @@ fi
 
 log_info "✅ Prerequisites validated"
 
-# Install systemd service file
+# Install systemd service file (only if changed)
 log_info "📋 Installing systemd service file..."
 
-sudo cp "$PROJECT_DIR/systemd/riva-websocket-bridge.service" /etc/systemd/system/
+# Check if service file exists and is identical
+SERVICE_FILE_CHANGED=false
+if [[ -f "/etc/systemd/system/riva-websocket-bridge.service" ]]; then
+    # Compare files (ignoring paths that get replaced by sed)
+    if ! diff -q "$PROJECT_DIR/systemd/riva-websocket-bridge.service" /etc/systemd/system/riva-websocket-bridge.service >/dev/null 2>&1; then
+        SERVICE_FILE_CHANGED=true
+    fi
+else
+    SERVICE_FILE_CHANGED=true
+fi
 
-# Update service file with actual paths and user
-sudo sed -i "s|/opt/riva/nvidia-parakeet-ver-6|/opt/riva/nvidia-parakeet-ver-6|g" /etc/systemd/system/riva-websocket-bridge.service
-sudo sed -i "s|/opt/riva/venv|/opt/riva/venv|g" /etc/systemd/system/riva-websocket-bridge.service
+if [[ "$SERVICE_FILE_CHANGED" == "true" ]]; then
+    sudo cp "$PROJECT_DIR/systemd/riva-websocket-bridge.service" /etc/systemd/system/
 
-log_info "   Service file installed: /etc/systemd/system/riva-websocket-bridge.service"
+    # Update service file with actual paths and user
+    sudo sed -i "s|/opt/riva/nvidia-parakeet-ver-6|/opt/riva/nvidia-parakeet-ver-6|g" /etc/systemd/system/riva-websocket-bridge.service
+    sudo sed -i "s|/opt/riva/venv|/opt/riva/venv|g" /etc/systemd/system/riva-websocket-bridge.service
+
+    log_info "   Service file installed (changed): /etc/systemd/system/riva-websocket-bridge.service"
+else
+    log_info "   Service file unchanged, skipping copy"
+fi
 
 # Reload systemd
 log_info "🔄 Reloading systemd configuration..."
@@ -107,19 +147,42 @@ else
     exit 1
 fi
 
-# Start the service
-log_info "🚀 Starting WebSocket bridge service..."
+# Smart service start/restart logic
+log_info "🚀 Managing WebSocket bridge service..."
 
-if sudo systemctl start riva-websocket-bridge.service; then
-    log_info "   Service start command executed"
+# Check if service is already running
+if sudo systemctl is-active riva-websocket-bridge.service >/dev/null 2>&1; then
+    if [[ "${FORCE_RESTART:-false}" == "true" ]]; then
+        log_info "   Service already running - forcing restart due to --force flag"
+        sudo systemctl restart riva-websocket-bridge.service
+        ACTION="restarted"
+    elif [[ "${SERVICE_FILE_CHANGED:-false}" == "true" ]]; then
+        log_info "   Service file changed - restarting service"
+        sudo systemctl restart riva-websocket-bridge.service
+        ACTION="restarted"
+    else
+        log_info "   Service running with current config - skipping restart"
+        ACTION="already_running"
+    fi
 else
-    log_error "Failed to start service"
-    exit 1
+    log_info "   Service not running - starting fresh"
+    if sudo systemctl start riva-websocket-bridge.service; then
+        log_info "   Service start command executed"
+        ACTION="started"
+    else
+        log_error "Failed to start service"
+        echo
+        log_info "📋 Service logs:"
+        sudo journalctl -u riva-websocket-bridge.service --no-pager -n 30
+        exit 1
+    fi
 fi
 
-# Wait for service to initialize
-log_info "⏳ Waiting for service to initialize..."
-sleep 5
+# Wait for service to initialize (only if we actually started/restarted it)
+if [[ "$ACTION" != "already_running" ]]; then
+    log_info "⏳ Waiting for service to initialize..."
+    sleep 5
+fi
 
 # Check service status
 SERVICE_STATUS=$(sudo systemctl is-active riva-websocket-bridge.service || echo "failed")
