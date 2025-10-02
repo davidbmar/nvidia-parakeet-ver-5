@@ -245,48 +245,56 @@ sudo chown riva:riva /opt/riva/start-websocket-bridge.sh
 
 log_info "   Startup script created: /opt/riva/start-websocket-bridge.sh"
 
-# Test the startup script
+# Test the startup script (skip if port already in use - service likely running)
 log_info "🧪 Testing startup script..."
 
-sudo -u riva timeout 5 /opt/riva/start-websocket-bridge.sh &
-BRIDGE_PID=$!
+WS_HOST="${WS_HOST:-0.0.0.0}"
+WS_PORT="${WS_PORT:-8443}"
 
-# Wait a moment for startup
-sleep 2
-
-# Check if process is running
-if kill -0 $BRIDGE_PID 2>/dev/null; then
-    log_info "   WebSocket bridge started successfully (PID: $BRIDGE_PID)"
-
-    # Test connection
-    WS_HOST="${WS_HOST:-0.0.0.0}"
-    WS_PORT="${WS_PORT:-8443}"
-
-    if [[ "$WS_HOST" == "0.0.0.0" ]]; then
-        TEST_HOST="localhost"
-    else
-        TEST_HOST="$WS_HOST"
-    fi
-
-    # Give it a moment to fully initialize
-    sleep 3
-
-    if timeout 5 nc -z "$TEST_HOST" "$WS_PORT"; then
-        log_success "✅ WebSocket server is listening on port $WS_PORT"
-        CONNECTION_TEST_PASSED=true
-    else
-        log_warn "⚠️  WebSocket server started but port $WS_PORT not accessible"
-        CONNECTION_TEST_PASSED=false
-    fi
-
-    # Stop test instance
-    kill $BRIDGE_PID 2>/dev/null || true
-    wait $BRIDGE_PID 2>/dev/null || true
-
+if [[ "$WS_HOST" == "0.0.0.0" ]]; then
+    TEST_HOST="localhost"
 else
-    log_error "WebSocket bridge failed to start"
-    wait $BRIDGE_PID 2>/dev/null || true
-    exit 1
+    TEST_HOST="$WS_HOST"
+fi
+
+# Check if port is already in use (service might be running)
+if timeout 2 nc -z "$TEST_HOST" "$WS_PORT" 2>/dev/null; then
+    log_info "   Port $WS_PORT already in use - assuming service is running"
+    log_info "   Skipping startup test to avoid port conflict"
+    CONNECTION_TEST_PASSED=true
+    WS_STARTUP_TEST_SKIPPED=true
+else
+    # Port available - safe to test
+    sudo -u riva timeout 5 /opt/riva/start-websocket-bridge.sh &
+    BRIDGE_PID=$!
+
+    # Wait a moment for startup
+    sleep 2
+
+    # Check if process is running
+    if kill -0 $BRIDGE_PID 2>/dev/null; then
+        log_info "   WebSocket bridge started successfully (PID: $BRIDGE_PID)"
+
+        # Give it a moment to fully initialize
+        sleep 3
+
+        if timeout 5 nc -z "$TEST_HOST" "$WS_PORT"; then
+            log_success "✅ WebSocket server is listening on port $WS_PORT"
+            CONNECTION_TEST_PASSED=true
+        else
+            log_warn "⚠️  WebSocket server started but port $WS_PORT not accessible"
+            CONNECTION_TEST_PASSED=false
+        fi
+
+        # Stop test instance
+        kill $BRIDGE_PID 2>/dev/null || true
+        wait $BRIDGE_PID 2>/dev/null || true
+    else
+        log_error "WebSocket bridge failed to start"
+        wait $BRIDGE_PID 2>/dev/null || true
+        exit 1
+    fi
+    WS_STARTUP_TEST_SKIPPED=false
 fi
 
 # Update deployment status
