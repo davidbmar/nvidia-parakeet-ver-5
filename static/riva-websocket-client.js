@@ -233,6 +233,18 @@ class RivaWebSocketClient {
                 console.log('Connection established:', message);
             }
 
+            // Handle session_started to set isTranscribing flag
+            if (messageType === 'session_started') {
+                this.isTranscribing = true;
+                console.log('Transcription flag set to true, audio will now be sent');
+            }
+
+            // Handle session_stopped to clear isTranscribing flag
+            if (messageType === 'session_stopped') {
+                this.isTranscribing = false;
+                console.log('Transcription flag set to false, audio sending stopped');
+            }
+
             // Calculate latency for transcription events
             if (message.timestamp && (messageType === 'transcription' || messageType === 'partial')) {
                 const serverTime = new Date(message.timestamp).getTime();
@@ -291,7 +303,7 @@ class RivaWebSocketClient {
             });
 
             // Load AudioWorklet processor
-            await this.audioContext.audioWorklet.addModule('/static/audio-worklet-processor.js');
+            await this.audioContext.audioWorklet.addModule('/audio-worklet-processor.js');
 
             // Create audio worklet node
             this.audioWorkletNode = new AudioWorkletNode(this.audioContext, 'riva-audio-processor', {
@@ -336,6 +348,11 @@ class RivaWebSocketClient {
                 if (this.isTranscribing && this.isConnected) {
                     this.sendAudioFrame(message.data);
                     this.metrics.audioFramesSent++;
+
+                    // Log every 50th frame to avoid console spam
+                    if (this.metrics.audioFramesSent % 50 === 0) {
+                        console.log(`Sent ${this.metrics.audioFramesSent} audio frames (${message.data.byteLength} bytes each)`);
+                    }
                 }
                 break;
 
@@ -353,7 +370,14 @@ class RivaWebSocketClient {
      */
     sendAudioFrame(audioData) {
         if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-            this.websocket.send(audioData);
+            try {
+                this.websocket.send(audioData);
+            } catch (error) {
+                console.error('Error sending audio frame:', error);
+                this.emit('error', { type: 'send_error', error: error.message });
+            }
+        } else {
+            console.warn(`Cannot send audio: WebSocket state is ${this.websocket ? this.websocket.readyState : 'null'}`);
         }
     }
 

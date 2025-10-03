@@ -138,7 +138,7 @@ list_current_rules() {
 
         # Check which ports this IP can access
         local accessible_ports=""
-        for port in 8080 8443; do
+        for port in 8080 8443 8444; do
             if echo "$rules" | jq -e ".[] | select(.FromPort == $port) | .IpRanges[] | select(.CidrIp == \"${ip}/32\")" > /dev/null 2>&1; then
                 accessible_ports="${accessible_ports}${port} "
             fi
@@ -212,8 +212,8 @@ delete_selected_ips() {
     # Delete the IPs from WebSocket demo ports
     echo -e "\n${CYAN}Removing selected IPs...${NC}"
     for ip in "${ips_to_delete[@]}"; do
-        echo -n "  Removing $ip from ports 8080,8443..."
-        for port in 8080 8443; do
+        echo -n "  Removing $ip from ports 8080,8443,8444..."
+        for port in 8080 8443 8444; do
             # Handle both regular IPs and anywhere CIDR
             if [ "$ip" = "0.0.0.0/0" ]; then
                 cidr="0.0.0.0/0"
@@ -240,7 +240,7 @@ add_ip_to_demo_ports() {
     echo -n "  Adding $ip ${description:+(${description})}..."
 
     local success=true
-    for port in 8080 8443; do
+    for port in 8080 8443 8444; do
         if ! aws ec2 authorize-security-group-ingress \
             --region "$AWS_REGION" \
             --group-id "$BUILDBOX_SECURITY_GROUP" \
@@ -265,6 +265,7 @@ configure_buildbox_security_group() {
     echo "Required ports for WebSocket demo:"
     echo "  • 8080: HTTP Demo Server"
     echo "  • 8443: WebSocket Bridge (WSS)"
+    echo "  • 8444: HTTPS Demo Server (for microphone access)"
 
     # Step 1: List current rules
     list_current_rules
@@ -349,30 +350,34 @@ configure_buildbox_security_group() {
 verify_websocket_bridge() {
     log_info "🔍 Verifying WebSocket bridge is running"
 
-    # Check if process is running
-    if pgrep -f "riva_websocket_bridge.py" >/dev/null; then
-        log_success "WebSocket bridge process is running"
+    # Check if systemd service exists and is running
+    if sudo systemctl is-active riva-websocket-bridge.service >/dev/null 2>&1; then
+        log_success "WebSocket bridge service is running"
     else
-        log_warn "WebSocket bridge is not running, starting it..."
+        log_warn "WebSocket bridge service is not running"
 
-        # Start WebSocket bridge in background
-        cd /opt/riva-ws
-        nohup python3 bin/riva_websocket_bridge.py > logs/bridge.log 2>&1 &
+        # Try to start the systemd service
+        if systemctl list-unit-files | grep -q "riva-websocket-bridge.service"; then
+            log_info "Starting WebSocket bridge service..."
+            sudo systemctl start riva-websocket-bridge.service
+            sleep 3
 
-        # Wait a moment for startup
-        sleep 3
-
-        if pgrep -f "riva_websocket_bridge.py" >/dev/null; then
-            log_success "WebSocket bridge started successfully"
+            if sudo systemctl is-active riva-websocket-bridge.service >/dev/null 2>&1; then
+                log_success "WebSocket bridge service started successfully"
+            else
+                log_error "Failed to start WebSocket bridge service"
+                sudo systemctl status riva-websocket-bridge.service --no-pager
+                exit 1
+            fi
         else
-            log_error "Failed to start WebSocket bridge"
-            echo "Check logs: tail -f /opt/riva-ws/logs/bridge.log"
+            log_error "WebSocket bridge service not installed"
+            log_info "Run scripts/riva-144-install-websocket-bridge-service.sh first"
             exit 1
         fi
     fi
 
     # Check if port is listening
-    if netstat -tlnp 2>/dev/null | grep -q ":8443.*LISTEN"; then
+    if sudo netstat -tlnp 2>/dev/null | grep -q ":8443.*LISTEN"; then
         log_success "WebSocket bridge is listening on port 8443"
     else
         log_error "WebSocket bridge port 8443 is not accessible"
@@ -384,24 +389,25 @@ verify_websocket_bridge() {
 verify_demo_server() {
     log_info "🌐 Verifying HTTP demo server is running"
 
-    # Check if HTTP server is running on port 8080
-    if netstat -tlnp 2>/dev/null | grep -q ":8080.*LISTEN"; then
-        log_success "HTTP demo server is running on port 8080"
+    # Check if systemd service exists and is running
+    if sudo systemctl is-active riva-http-demo.service >/dev/null 2>&1; then
+        log_success "HTTP demo service is running on port 8080"
     else
-        log_warn "HTTP demo server is not running, starting it..."
+        log_warn "HTTP demo service is not running"
+        log_info "Run scripts/riva-152-install-http-demo-service.sh to install HTTP demo service"
+        log_info "Or the service will be started automatically if installed"
 
-        # Start HTTP server in background
-        cd "$(dirname "$0")/.."
-        nohup python3 -m http.server 8080 > /tmp/demo-server.log 2>&1 &
+        # Try to start if service exists
+        if systemctl list-unit-files | grep -q "riva-http-demo.service"; then
+            log_info "Starting HTTP demo service..."
+            sudo systemctl start riva-http-demo.service
+            sleep 2
 
-        # Wait a moment for startup
-        sleep 2
-
-        if netstat -tlnp 2>/dev/null | grep -q ":8080.*LISTEN"; then
-            log_success "HTTP demo server started successfully"
-        else
-            log_error "Failed to start HTTP demo server"
-            exit 1
+            if sudo systemctl is-active riva-http-demo.service >/dev/null 2>&1; then
+                log_success "HTTP demo service started successfully"
+            else
+                log_warn "Failed to start HTTP demo service (optional)"
+            fi
         fi
     fi
 }
