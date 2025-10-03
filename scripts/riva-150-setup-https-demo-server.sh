@@ -18,8 +18,17 @@ fi
 # Fallback logging functions if not available from common functions
 if ! command -v log_info >/dev/null 2>&1; then
     log_info() { echo "ℹ️  $*"; }
+fi
+if ! command -v log_success >/dev/null 2>&1; then
     log_success() { echo "✅ $*"; }
+fi
+if ! command -v log_error >/dev/null 2>&1; then
     log_error() { echo "❌ $*" >&2; }
+fi
+if ! command -v log_warn >/dev/null 2>&1; then
+    log_warn() { echo "⚠️  $*"; }
+fi
+if ! command -v log_warning >/dev/null 2>&1; then
     log_warning() { echo "⚠️  $*"; }
 fi
 
@@ -31,6 +40,57 @@ HTTP_PORT="${DEMO_HTTP_PORT:-8080}"
 CERT_FILE="${APP_SSL_CERT:-/opt/riva/certs/server.crt}"
 KEY_FILE="${APP_SSL_KEY:-/opt/riva/certs/server.key}"
 STATIC_DIR="$(pwd)/static"
+
+# Setup certificate access permissions
+setup_certificate_permissions() {
+    log_info "🔑 Setting up SSL certificate access permissions..."
+
+    # Check if user needs to be added to riva group
+    local user_added=false
+    if ! groups | grep -q "\briva\b"; then
+        log_info "Adding user $USER to riva group for certificate access..."
+        sudo usermod -a -G riva "$USER"
+        user_added=true
+    fi
+
+    # Make server.key group-readable (if not already)
+    local current_perms=$(stat -c "%a" "$KEY_FILE" 2>/dev/null || echo "000")
+    if [[ "$current_perms" != "640" ]]; then
+        log_info "Making SSL key group-readable..."
+        sudo chmod 640 "$KEY_FILE"
+    fi
+
+    # If we just added the user to riva group, they need to start a new session
+    if [[ "$user_added" == "true" ]]; then
+        log_error "❌ Group membership requires a new session to take effect"
+        log_info ""
+        log_info "📋 Please run ONE of the following:"
+        log_info "   1. Log out and log back in, then re-run this script"
+        log_info "   2. Run: newgrp riva"
+        log_info "      Then in the new shell run: ./scripts/riva-150-setup-https-demo-server.sh"
+        log_info ""
+        log_info "This is a one-time setup step for fresh checkout."
+        exit 1
+    fi
+
+    # Verify we can read the files
+    if [[ -r "$CERT_FILE" ]]; then
+        log_success "Certificate file is accessible"
+    else
+        log_error "Cannot read certificate file: $CERT_FILE"
+        exit 1
+    fi
+
+    if [[ -r "$KEY_FILE" ]]; then
+        log_success "Certificate key is accessible"
+    else
+        log_error "Cannot read certificate key: $KEY_FILE"
+        log_info "If you were just added to the riva group, run: newgrp riva"
+        exit 1
+    fi
+
+    log_success "Certificate permissions configured"
+}
 
 # Validate prerequisites
 validate_prerequisites() {
@@ -235,6 +295,7 @@ validate_results() {
 # Main execution
 main() {
     validate_prerequisites
+    setup_certificate_permissions
     create_https_server_script
     stop_existing_servers
     start_https_server
